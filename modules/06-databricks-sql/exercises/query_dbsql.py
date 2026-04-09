@@ -18,7 +18,6 @@ Then run:
 """
 
 import os
-from pathlib import Path
 
 from databricks import sql
 from rich.console import Console
@@ -37,7 +36,7 @@ def get_connection_params() -> dict:
     http_path = os.environ.get("DATABRICKS_HTTP_PATH")
 
     if not all([host, token, http_path]):
-        raise EnvironmentError(
+        raise OSError(
             "Missing Databricks connection config. "
             "Set DATABRICKS_HOST, DATABRICKS_TOKEN, and DATABRICKS_HTTP_PATH."
         )

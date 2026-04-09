@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 
 import pandas as pd
-from deltalake import DeltaTable, write_deltalake
+from deltalake import DeltaTable
 from rich.console import Console
 from rich.panel import Panel
 

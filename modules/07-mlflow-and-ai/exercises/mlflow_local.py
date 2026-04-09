@@ -11,18 +11,13 @@ Then view the results:
     open http://localhost:5000
 """
 
-import json
-from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
-import numpy as np
 import pandas as pd
 from rich.console import Console
 from rich.panel import Panel
 from sklearn.ensemble import IsolationForest
-from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
 
 console = Console()
 

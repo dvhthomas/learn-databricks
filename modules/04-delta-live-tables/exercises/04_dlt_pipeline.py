@@ -18,11 +18,11 @@
 # Do NOT include this in the DLT pipeline — it's just setup.
 
 import json
-from datetime import datetime, timedelta, timezone
 import random
+from datetime import UTC, datetime, timedelta
 
 readings = []
-base = datetime(2024, 11, 18, 10, 0, 0, tzinfo=timezone.utc)
+base = datetime(2024, 11, 18, 10, 0, 0, tzinfo=UTC)
 for i in range(200):
     readings.append({
         "sensor_id": f"sensor_{random.randint(1, 5):04d}",
@@ -55,7 +55,12 @@ print(f"Wrote {len(readings)} readings to /tmp/sensor-raw/batch_001.json")
 
 import dlt
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
+from pyspark.sql.types import (
+    DoubleType,
+    StringType,
+    StructField,
+    StructType,
+)
 
 RAW_PATH = "/tmp/sensor-raw/"
 

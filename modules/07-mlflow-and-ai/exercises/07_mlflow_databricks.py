@@ -17,7 +17,6 @@
 
 import mlflow
 import mlflow.sklearn
-from pyspark.sql import functions as F
 from sklearn.ensemble import IsolationForest
 
 # Databricks manages the MLflow tracking server automatically
@@ -34,8 +33,8 @@ print("MLflow tracking URI:", mlflow.get_tracking_uri())
 # gold_df = spark.table("learning.sensors.gold_hourly_stats").toPandas()
 
 # For now, generate synthetic data if the table doesn't exist yet
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 rng = np.random.default_rng(42)
 n = 500
