@@ -1,5 +1,5 @@
 <nav>
-  <a href="{{ "/" | relURL }}">{{ .Site.Title }}</a>
+  <a href="{{ .Site.Home.RelPermalink }}">{{ .Site.Title }}</a>
   {{ range .Site.Menus.main }}
     <a href="{{ .URL | relURL }}">{{ .Name }}</a>
   {{ end }}

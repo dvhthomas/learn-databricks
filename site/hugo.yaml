@@ -1,4 +1,4 @@
-baseURL: http://localhost:1313/
+baseURL: https://dvhthomas.github.io/learn-databricks/
 locale: en-us
 title: Learn Databricks
 theme: learn
