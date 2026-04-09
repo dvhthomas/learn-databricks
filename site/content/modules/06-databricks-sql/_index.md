@@ -1,7 +1,7 @@
 ---
 title: "Module 6: Databricks SQL"
 summary: "15 analysts each have their own CSV extracts. Reports disagree. The CFO asks why the capacity factor is different in every meeting."
-status: planned
+status: in-progress
 weight: 6
 tags:
   - databricks-sql

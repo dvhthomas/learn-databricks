@@ -1,7 +1,7 @@
 ---
 title: "Module 7: MLflow and the AI Platform"
 summary: "Your vibration model predicted bearing failure in the notebook. In production it missed 3 failures. Nobody can explain what changed."
-status: planned
+status: in-progress
 weight: 7
 tags:
   - mlflow
