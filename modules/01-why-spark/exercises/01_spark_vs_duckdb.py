@@ -18,9 +18,10 @@
 
 # COMMAND ----------
 
-import pandas as pd
+from datetime import UTC, datetime, timedelta
+
 import numpy as np
-from datetime import datetime, timedelta, timezone
+import pandas as pd
 
 # Generate 10,000 readings across 50 sensors over 24 hours
 # This is small enough to run in Community Edition
@@ -28,7 +29,7 @@ rng = np.random.default_rng(seed=42)
 n = 10_000
 sensors = [f"sensor_{i:04d}" for i in range(50)]
 
-base_time = datetime(2024, 11, 18, 0, 0, 0, tzinfo=timezone.utc)
+base_time = datetime(2024, 11, 18, 0, 0, 0, tzinfo=UTC)
 readings = pd.DataFrame({
     "sensor_id": rng.choice(sensors, size=n),
     "value": rng.normal(loc=25.0, scale=8.0, size=n).round(2),
@@ -49,7 +50,6 @@ print(readings.head())
 # COMMAND ----------
 
 # Convert pandas DataFrame to Spark DataFrame
-from pyspark.sql import functions as F
 
 spark_df = spark.createDataFrame(readings)
 spark_df.printSchema()
