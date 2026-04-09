@@ -1,4 +1,4 @@
-name: Test local exercises
+name: CI
 
 on:
   push:
@@ -6,25 +6,20 @@ on:
   pull_request:
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
         run: uv sync
 
-      - name: Run Module 2 exercise (Delta writer)
-        run: uv run python modules/02-delta-lake/exercises/delta_writer.py
-
-      - name: Run Module 3 exercise (Medallion)
-        run: uv run python modules/03-medallion-architecture/exercises/medallion.py
-
-      - name: Run Module 7 exercise (MLflow local)
-        run: uv run python modules/07-mlflow-and-ai/exercises/mlflow_local.py
-
-      - name: Lint
+      - name: Lint exercise code
         run: uv run ruff check modules/
+
+      - name: Build Hugo site
+        working-directory: site
+        run: uv run hugo --gc
