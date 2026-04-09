@@ -7,29 +7,33 @@ tags:
   - shuffle
   - performance
   - stages
+  - photon
+  - aqe
 sources:
   - https://spark.apache.org/docs/latest/rdd-programming-guide.html#shuffle-operations
-  - https://www.databricks.com/blog/2022/04/11/introducing-photon-the-next-generation-query-engine-on-the-databricks-lakehouse-platform.html
-last_refreshed: ""
+  - https://www.databricks.com/product/photon
+  - https://spark.apache.org/docs/latest/sql-performance-tuning.html
+  - https://docs.databricks.com/aws/en/compute/photon
+last_refreshed: "2026-04-08"
 ---
 
 ## The question
 
-Your Spark job processes 1TB of sensor data across 10 executors. Some operations finish in seconds. Others take 45 minutes. The data size didn't change. The cluster didn't change. So what's different about the slow operations?
+Your Spark job joins 3 years of SCADA data with weather data to find turbines with abnormal gearbox temperatures. Some operations finish in seconds. Others take 45 minutes. The data size didn't change. The cluster didn't change. So what's different about the slow operations?
 
 The answer, almost every time, is the **shuffle**. Understanding what a shuffle is, why it's expensive, and how to minimize it is the single most practical thing you can learn about Spark performance.
 
 ## When operations are fast
 
-Consider this transformation:
+Consider this transformation on wind turbine SCADA data:
 
 ```python
-df = spark.read.parquet("sensors/")
-filtered = df.filter(col("units") == "degrees_c")
-selected = filtered.select("sensor_id", "value", "timestamp")
+df = spark.read.parquet("scada/")
+filtered = df.filter(col("signal") == "gearbox_temp")
+selected = filtered.select("turbine_id", "value", "timestamp")
 ```
 
-This is fast, regardless of data size. Why? Because every executor can do this work independently on its own partitions. Executor 1 filters its partition for `degrees_c` rows and selects three columns. Executor 2 does the same on its partition. No executor needs to talk to any other executor. No data moves between machines.
+This is fast, regardless of data size. Why? Because every executor can do this work independently on its own partitions. Executor 1 filters its partition for `gearbox_temp` rows and selects three columns. Executor 2 does the same on its partition. No executor needs to talk to any other executor. No data moves between machines.
 
 Spark calls these **narrow transformations** — each output partition depends on only one input partition.
 
@@ -38,38 +42,65 @@ Spark calls these **narrow transformations** — each output partition depends o
 Now add a `groupBy`:
 
 ```python
-avg_by_sensor = filtered.groupBy("sensor_id").agg(avg("value"))
+avg_by_turbine = filtered.groupBy("turbine_id").agg(avg("value"))
 ```
 
-This changes everything. To compute the average for `sensor_0042`, Spark needs ALL rows for that sensor — but those rows are spread across many executors (because the data was partitioned by file, not by sensor ID). Spark must physically move data from every executor to whichever executor is responsible for `sensor_0042`.
+This changes everything. To compute the average gearbox temperature for turbine `WTG-0042`, Spark needs ALL rows for that turbine — but those rows are spread across many executors (because the data was partitioned by file, not by turbine ID). Spark must physically move data from every executor to whichever executor is responsible for `WTG-0042`.
 
-Multiply that by thousands of distinct sensor IDs, and you have a massive data transfer.
+Multiply that by 500 turbines, and you have a significant data transfer.
 
 <div class="definition">
 <strong>Shuffle</strong>
-The process of redistributing data across executors so that rows with the same key end up on the same machine. Shuffles happen during groupBy, join, distinct, repartition, and any operation that requires data from multiple partitions to be combined. During a shuffle, every executor writes its outgoing data to local disk, then every executor reads incoming data from every other executor over the network.
+The process of redistributing data across executors so that rows with the same key end up on the same machine. Shuffles happen during groupBy, join, distinct, repartition, and any operation that requires data from multiple partitions to be combined. During a shuffle, every executor writes its outgoing data to local disk, then every executor reads incoming data from every other executor over the network[^1].
 </div>
 
 ## Why shuffles are expensive
 
 A shuffle involves three costs that are each individually significant:
 
-**Disk I/O.** Before transferring data, each executor writes its outgoing shuffle data to local disk. This is called the "shuffle write." On the receiving end, executors read the incoming data from disk again. All of this happens even though the data was already in memory.
+```mermaid
+graph LR
+    subgraph "Stage 1: Before Shuffle"
+        E1["Executor 1<br/>Mixed turbine data"] -->|serialize + write| D1["Local Disk"]
+        E2["Executor 2<br/>Mixed turbine data"] -->|serialize + write| D2["Local Disk"]
+        E3["Executor 3<br/>Mixed turbine data"] -->|serialize + write| D3["Local Disk"]
+    end
 
-**Network transfer.** The shuffle data must travel over the network from every executor to every other executor. If you have 100 executors, the network traffic scales with the square of the executor count. On a large cluster processing terabytes, shuffle transfers can saturate the network.
+    subgraph "Shuffle (network transfer)"
+        D1 -->|WTG-0001..0167 data| E4
+        D2 -->|WTG-0001..0167 data| E4
+        D3 -->|WTG-0001..0167 data| E4
+        D1 -->|WTG-0168..0334 data| E5
+        D2 -->|WTG-0168..0334 data| E5
+        D3 -->|WTG-0168..0334 data| E5
+        D1 -->|WTG-0335..0500 data| E6
+        D2 -->|WTG-0335..0500 data| E6
+        D3 -->|WTG-0335..0500 data| E6
+    end
+
+    subgraph "Stage 2: After Shuffle"
+        E4["Executor 4<br/>All WTG-0001..0167"]
+        E5["Executor 5<br/>All WTG-0168..0334"]
+        E6["Executor 6<br/>All WTG-0335..0500"]
+    end
+```
+
+**Disk I/O.** Before transferring data, each executor writes its outgoing shuffle data to local disk (the "shuffle write"). On the receiving end, executors read the incoming data from disk again. All of this happens even though the data was already in memory.
+
+**Network transfer.** The shuffle data must travel over the network from every executor to every other executor. On a large cluster processing terabytes, shuffle transfers can saturate the network.
 
 **Serialization.** Data must be serialized (converted to bytes) for transfer and deserialized on arrival. This costs CPU time.
 
-Here's a rough sense of the speed differences:
+Approximate order-of-magnitude comparison (these are rough figures for intuition, not benchmarks):
 
-| Operation | Typical speed |
+| Operation | Typical throughput |
 |---|---|
 | Read from memory | ~10 GB/s |
 | Read from local SSD | ~2 GB/s |
-| Read over network (within data center) | ~1 GB/s |
-| Read over network (cross-zone) | ~0.1-0.5 GB/s |
+| Network transfer (same data center) | ~1 GB/s |
+| Network transfer (cross-zone) | ~0.1–0.5 GB/s |
 
-A shuffle turns an in-memory operation into a disk + network + serialization operation. That's often a 10-100x slowdown.
+A shuffle turns an in-memory operation into a disk + network + serialization operation. That's often a 10–100x slowdown.
 
 ## Stages: where the boundaries are
 
@@ -77,19 +108,19 @@ Spark uses shuffles to divide your job into **stages**.
 
 <div class="definition">
 <strong>Stage</strong>
-A group of tasks that can run without a shuffle. When Spark encounters an operation that requires a shuffle (like groupBy or join), it creates a stage boundary. All tasks in the current stage must complete and write their shuffle data before the next stage can begin.
+A group of tasks that can run without a shuffle. When Spark encounters an operation that requires a shuffle (like groupBy or join), it creates a stage boundary. All tasks in the current stage must complete and write their shuffle data before the next stage can begin[^1].
 </div>
 
-For our sensor query:
+For our wind turbine query:
 
 ```python
 result = (
-    spark.read.parquet("sensors/")           # Stage 1: read + filter + select
-    .filter(col("units") == "degrees_c")     #   (narrow transformations, no shuffle)
-    .select("sensor_id", "value")            #
-    .groupBy("sensor_id")                    # -- shuffle boundary --
+    spark.read.parquet("scada/")             # Stage 1: read + filter + select
+    .filter(col("signal") == "gearbox_temp") #   (narrow transformations, no shuffle)
+    .select("turbine_id", "value")           #
+    .groupBy("turbine_id")                   # ── shuffle boundary ──
     .agg(avg("value"))                       # Stage 2: aggregate
-    .orderBy("avg_temp", ascending=False)    # -- shuffle boundary --
+    .orderBy("avg_temp", ascending=False)    # ── shuffle boundary ──
 )                                            # Stage 3: sort
 ```
 
@@ -105,7 +136,7 @@ When you run a Spark job on Databricks, the Spark UI shows you exactly what happ
 
 The most important numbers in the Spark UI for performance:
 - **Shuffle Read / Shuffle Write** — how much data crossed the network
-- **Task duration distribution** — are some tasks much slower than others? (this indicates data skew)
+- **Task duration distribution** — are some tasks much slower than others? (this indicates data skew — e.g., one turbine with 10x more readings than others)
 - **Spill (Memory) / Spill (Disk)** — did executors run out of memory and spill to disk?
 
 If a job is slow, look at the Spark UI first. The shuffle metrics will almost always point you to the problem.
@@ -115,21 +146,37 @@ If a job is slow, look at the Spark UI first. The shuffle metrics will almost al
 | Operation | Why it shuffles | Can you avoid it? |
 |---|---|---|
 | `groupBy().agg()` | Rows for same key must be co-located | Not really — but you can reduce data before the group |
-| `join()` | Matching rows from two datasets must meet | Use a broadcast join if one side is small (<100MB) |
+| `join()` | Matching rows from two datasets must meet | Use a **broadcast join** if one side is small (<100MB). Weather station data (12 stations) is a good candidate. |
 | `distinct()` | Must compare all rows | Sometimes `dropDuplicates` on a subset of columns is cheaper |
 | `orderBy()` | Global sort requires all data to be compared | Do you actually need a global sort, or is `sortWithinPartitions` enough? |
 | `repartition()` | Explicitly redistributes data | Only use when you have a good reason |
 
 The instinct to develop: before writing a transformation, ask yourself "does this need data from multiple partitions?" If yes, there's a shuffle, and you should make sure it's worth it.
 
+**Wind utility example:** Joining SCADA data with weather data by station and hour. The SCADA table has billions of rows; the weather table has ~150,000 rows (12 stations × 8,760 hours/year × ~1.5 years). The weather table is small enough to broadcast — Spark sends a copy to every executor so they can join locally without a shuffle. If you don't hint this, Spark might hash-partition both sides and shuffle the entire SCADA table unnecessarily. AQE (below) often catches this automatically, but knowing the pattern helps you write faster queries.
+
 ## What Databricks does about this
 
 Spark shuffles are inherently expensive, but Databricks has invested heavily in making them less painful:
 
-**Photon engine.** Databricks' native vectorized execution engine, written in C++, that replaces parts of the JVM-based Spark engine. Photon is particularly effective at shuffle-heavy operations because it's faster at serialization and more efficient with memory.
+**Photon engine.** Databricks' native execution engine, written in C++, that replaces the JVM-based Spark engine for supported operations. Photon runs by default on SQL warehouses and serverless compute[^2]. It is particularly effective at shuffle-heavy operations through **vectorized shuffle** — keeping data in compact columnar format and processing multiple values simultaneously using SIMD instructions, yielding roughly 1.5x higher throughput on CPU-bound workloads like large joins and wide aggregations[^3].
 
-**Adaptive Query Execution (AQE).** Spark 3.0+ (enabled by default on Databricks) can dynamically adjust the query plan during execution. If one partition ends up with much more data than others after a shuffle (data skew), AQE can split that partition into smaller pieces. It can also coalesce too-small partitions after a shuffle.
+**Adaptive Query Execution (AQE).** Enabled by default in Spark 3.0+ and on all Databricks runtimes, AQE dynamically adjusts the query plan *during* execution based on actual runtime statistics[^4]. Key capabilities:
 
-These don't eliminate shuffles, but they reduce the pain. The fundamental rule still applies: the fewer shuffles, the faster your job.
+- **Skew handling:** If one partition ends up with much more data than others after a shuffle (data skew — e.g., a turbine in a high-wind region with 10x more curtailment events), AQE splits that partition into smaller pieces.
+- **Partition coalescing:** After a shuffle, if many partitions are too small, AQE merges them to reduce task overhead.
+- **Join strategy switching:** If AQE discovers at runtime that one side of a join is small enough to broadcast, it switches from sort-merge join to broadcast join automatically.
 
-**Key takeaway: A shuffle moves data across the network so that rows with the same key land on the same executor. Shuffles are the primary cause of slow Spark jobs because they replace fast in-memory operations with slow disk + network + serialization operations. Every groupBy, join, and sort triggers a shuffle. Learning to minimize shuffles is the most practical Spark skill you can develop.**
+These don't eliminate shuffles, but they reduce the pain significantly. The fundamental rule still applies: the fewer shuffles, the faster your job.
+
+**Key takeaway: A shuffle moves data across the network so that rows with the same key land on the same executor. Shuffles are the primary cause of slow Spark jobs because they replace fast in-memory operations with slow disk + network + serialization operations. Every groupBy, join, and sort triggers a shuffle. Learning to minimize shuffles — by filtering early, broadcasting small tables, and checking the Spark UI — is the most practical Spark skill you can develop.**
+
+---
+
+[^1]: Apache Spark. "RDD Programming Guide — Shuffle Operations." https://spark.apache.org/docs/latest/rdd-programming-guide.html#shuffle-operations
+
+[^2]: Databricks. "What is Photon?" Photon is enabled by default on SQL warehouses and serverless compute. https://docs.databricks.com/aws/en/compute/photon
+
+[^3]: Databricks. "Photon Engine." Vectorized shuffle keeps data in compact columnar format, improving throughput for CPU-bound workloads. https://www.databricks.com/product/photon
+
+[^4]: Apache Spark. "Performance Tuning — Adaptive Query Execution." https://spark.apache.org/docs/latest/sql-performance-tuning.html

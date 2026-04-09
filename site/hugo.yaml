@@ -7,6 +7,9 @@ markup:
   goldmark:
     renderer:
       unsafe: true
+    parser:
+      attribute:
+        block: true
   highlight:
     style: dracula
     lineNos: false
@@ -20,6 +23,9 @@ menu:
     - name: Modules
       url: /modules/
       weight: 10
+    - name: Glossary
+      url: /glossary/
+      weight: 15
     - name: Setup
       url: /setup/
       weight: 20
