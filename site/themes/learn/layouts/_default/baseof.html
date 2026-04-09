@@ -19,5 +19,11 @@
   <footer>
     <p>Learn Databricks — built with Hugo</p>
   </footer>
+  {{ if .Store.Get "hasMermaid" }}
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+  </script>
+  {{ end }}
 </body>
 </html>
