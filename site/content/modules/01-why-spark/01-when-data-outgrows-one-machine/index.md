@@ -64,6 +64,10 @@ A distributed event streaming platform that stores ordered, immutable sequences 
 
 In the wind utility, Kafka replaces Redis. SCADA data flows from turbine controllers → a Kafka topic → multiple consumers: one writes to long-term storage, another feeds the real-time dashboard, a third streams to an ML model for anomaly detection. If any consumer fails, the data is still in Kafka — replay from the last offset and catch up.
 
+It's worth understanding why Kafka is fundamentally different from a message queue like RabbitMQ or Redis. A traditional queue delivers a message to one consumer, then removes it — the message is gone. Kafka is a **durable, replayable event log**: messages (events) are written to an append-only log on disk and retained for a configurable period (days, weeks, or indefinitely). Any consumer can read from any point in the log, independently of other consumers. This replayability is critical for the wind utility. Suppose your Silver pipeline had a bug that miscalculated gearbox temperature deltas for the past two weeks. With a queue, those raw readings are gone — you'd need to re-extract from the SCADA historian (if it even retains that granularity). With Kafka, you reset the consumer offset to two weeks ago and reprocess the raw events through the corrected pipeline. The data never left. For connecting to industrial equipment, Kafka Connect provides a framework of pre-built connectors that bridge SCADA systems, OPC-UA servers, MQTT brokers, and PLCs directly into Kafka topics without custom integration code[^9].
+
+[^9]: Waehner, K. "OPC UA, MQTT, and Apache Kafka — The Trinity of Data Streaming in IoT." 2022. Kafka Connect connectors provide native integration for equipment supporting MQTT and OPC-UA protocols. https://www.kai-waehner.de/blog/2022/02/11/opc-ua-mqtt-apache-kafka-the-trinity-of-data-streaming-in-industrial-iot/
+
 ### 2. Local files can't be shared or trusted
 
 sensor-analytics writes Parquet files to the local filesystem. One process writes, one person reads. For the wind utility:

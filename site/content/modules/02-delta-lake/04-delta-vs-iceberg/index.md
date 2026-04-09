@@ -134,6 +134,8 @@ graph LR
 
 UniForm is a bridge, not a merger. The write path is still Delta, so you're still committing to the Databricks ecosystem for writes. But it eliminates the "vendor lock-in" argument for reads — Snowflake analysts can query the same data that Databricks pipelines produce.
 
+**UniForm lag and limitations.** UniForm metadata generation happens asynchronously after each Delta commit, using the same compute that completed the Delta transaction[^5]. The lag is typically negligible — Iceberg readers see new data within seconds of the Delta write completing. However, to prevent cascading latency for workloads with frequent commits (seconds to minutes between commits), Delta skips Iceberg metadata generation if a previous generation is still in progress[^5]. For the wind utility's batch workloads (10-minute SCADA intervals), this lag is invisible. For sub-second streaming use cases with very frequent commits, Iceberg readers may lag behind by several commits. Also note: UniForm is write-path only — you write through Delta, and Iceberg metadata is generated automatically. You cannot write through the Iceberg API and have Delta metadata generated. If a team needs to write Iceberg natively (e.g., from a non-Databricks Spark cluster or a Flink pipeline), UniForm doesn't help — they need native Iceberg tables. UniForm solves "we write in Databricks, others read" but not "everyone writes to the same table from different engines."
+
 The industry is moving toward convergence. As [Capital One's engineering team wrote](https://www.capitalone.com/tech/cloud/lakehouse-format-convergence-delta-lake-iceberg/): "The principle emerging in 2025 is *write once, read anywhere*."
 
 ## The honest comparison table
@@ -182,3 +184,7 @@ You don't need to master these for Module 2, but you should know they exist:
 **Sort order** (Iceberg): Iceberg's equivalent — specifies how data within files is sorted to enable predicate pushdown and data skipping.
 
 **Key takeaway: Delta Lake and Iceberg are converging — both provide ACID on Parquet, and UniForm bridges the read path. Delta wins in Databricks-centric environments with deep Unity Catalog governance. Iceberg wins in multi-engine environments where Snowflake, Trino, and Flink need native access. For a regulated wind utility, the format matters less than the governance and collaboration capabilities of the platform around it.**
+
+---
+
+[^5]: UniForm generates Iceberg metadata asynchronously after each Delta commit. Concurrent metadata generation is skipped to prevent cascading latency. See [Delta Lake UniForm documentation](https://docs.delta.io/delta-uniform/) and [Databricks UniForm documentation](https://docs.databricks.com/aws/en/delta/uniform).

@@ -78,6 +78,8 @@ INSERT INTO scada_readings SELECT * FROM new_data;
 
 The `merge` mode adds the new column to the table schema. Existing rows get `null` for the new column. From this commit forward, the schema includes `ice_severity`.
 
+What about columns that shouldn't be NULL? If you add a column with `mergeSchema` and existing rows don't have it, those rows get NULL. If you need a NOT NULL constraint on the new column, you have two options. Delta Lake 3.1+ supports DEFAULT values on columns using the `allowColumnDefaults` table feature — you can define a default at the column level so new rows without an explicit value get the default automatically[^3]. For tables without this feature enabled, you'll need to backfill manually: write a separate UPDATE setting the value for existing rows, then add the constraint. The `_delta_log` records the schema change as a new `metaData` action — you can see exactly when the schema changed and what columns were added by reading the log entries.
+
 **The key insight:** Schema enforcement is the default. Schema evolution is the exception — an explicit decision that gets recorded in the transaction log. This is the opposite of raw Parquet, where any writer can write anything.
 
 Delta Lake 4.0 added **Type Widening** — you can change a column from `int` to `long`, or `float` to `double`, without rewriting the underlying data files. The widening is recorded in the log and applied at read time[^1].
@@ -146,6 +148,10 @@ Time travel relies on old Parquet files still existing on disk. The `VACUUM` com
 
 For compliance-heavy environments like the wind utility, you'd extend this retention — or archive old versions separately. Some organizations keep retention at 30 or 90 days.
 
+### Costs of time travel
+
+Time travel is not free. Every version retains its data files until you run `VACUUM`. For the wind utility ingesting ~2 GB/day of SCADA data, 90 days of time travel retention means ~180 GB of historical files on top of the current table. At S3 pricing (~$0.023/GB/month), that's about $4/month — negligible. But for a 500 GB/day enterprise pipeline, 90 days means 45 TB of retention at ~$1,035/month. The trade-off: shorter VACUUM retention saves storage but loses the ability to recover from older mistakes. Most teams use 7–30 day retention and rely on Bronze immutability for longer recovery — since Bronze is append-only, you can always reprocess from the raw data even after Gold versions have been vacuumed. The default VACUUM retention on Databricks is 7 days (controlled by the `delta.deletedFileRetentionDuration` table property)[^2].
+
 ## MERGE: handling late-arriving and corrected data
 
 In the wind utility, data doesn't always arrive in order:
@@ -199,6 +205,8 @@ MERGE doesn't update files in place — Parquet files are immutable. Instead:
 
 This is called **copy-on-write** — modified rows are written to new files, and the log is updated to point to them. It means MERGE on a few rows can rewrite entire files (since files contain many rows), which is why file sizing and Z-ordering/liquid clustering matter for MERGE performance.
 
+To make this concrete: if your target table has 100 files of 128 MB each (12.8 GB total) and your MERGE touches rows in 10 of those files, Delta reads and rewrites all 10 files — even if only 1 row per file changed. The old 10 files are marked as "removed" in the log and 10 new files are "added." For large tables, this means MERGE can be slow if your data isn't clustered well — a MERGE that logically updates 500 rows might physically rewrite gigabytes of data if those rows are scattered across many files. Liquid clustering (or Z-ordering) on the MERGE key columns keeps related rows in fewer files, reducing the number of files rewritten. For the wind utility's recalibration scenario, clustering the SCADA table on `(turbine_id, timestamp)` means a 48-hour correction for one turbine touches only a handful of files instead of the entire table.
+
 ## Putting it together: the SCADA pipeline with Delta
 
 Here's what the wind utility's pipeline looks like with these three features:
@@ -233,4 +241,8 @@ Each of these operations is:
 
 ---
 
-[^1]: Delta Lake 4.0 Type Widening. Allows widening column types (int→long, float→double) without rewriting data. See [Delta Lake 4.0 release](https://delta.io/blog/2025-09-25-delta-lake-40/).
+[^1]: Delta Lake 4.0 Type Widening. Allows widening column types (int->long, float->double) without rewriting data. See [Delta Lake 4.0 release](https://delta.io/blog/2025-09-25-delta-lake-40/).
+
+[^2]: The default VACUUM retention is 7 days, controlled by the `delta.deletedFileRetentionDuration` table property. See [Databricks VACUUM documentation](https://docs.databricks.com/aws/en/delta/vacuum).
+
+[^3]: Delta Lake supports DEFAULT column values since version 3.1.0, using the `allowColumnDefaults` writer table feature. See [Delta Lake DEFAULT columns documentation](https://docs.delta.io/delta-default-columns/).

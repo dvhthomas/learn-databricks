@@ -108,6 +108,18 @@ RETURN CASE
 END;
 ```
 
+### Performance and testing
+
+Column masking adds a function call per row per masked column. For simple SQL functions — check group membership, return NULL — the overhead is modest in most workloads. For complex functions involving encryption, tokenization, or Python UDFs, the overhead can be significant. Databricks recommends using SQL UDFs over Python UDFs for masking functions because SQL UDFs can be optimized by the query engine, and keeping function arguments minimal to reduce per-row evaluation cost.[^7]
+
+A few practical guidelines:
+
+- **Test at realistic scale.** Databricks documentation recommends validating masking performance on at least 1 million rows. A mask that adds negligible overhead on 10,000 rows may behave differently when scanning a full year of 10-minute SCADA readings across 500 turbines (~26 million rows).
+- **Watch for caching effects.** Some users have observed that queries with masking functions do not benefit from result caching in the same way unmasked queries do, because the mask output depends on the caller's identity.
+- **Prefer ABAC policies where available.** Databricks' attribute-based access control (ABAC) policies evaluate filtering and masking logic more efficiently than table-specific UDFs, as the engine can optimize the policy evaluation path.[^8]
+
+To test masks without exposing real data: create a `wind_dev` catalog with synthetic data that mirrors the production schema. Apply the same masking functions. Run queries as different service principals or use test accounts with different group memberships, and verify that masked columns return the expected values for each role. Use `DESCRIBE TABLE EXTENDED` to confirm which columns have masks applied and which functions they reference.
+
 ### Row filtering: each region sees only its turbines
 
 Your wind utility operates in Texas, Oklahoma, and Kansas. The Texas operations team should see Texas turbines. The Oklahoma team should see Oklahoma. The fleet analytics team sees everything. Row filters make this automatic.
@@ -143,6 +155,8 @@ ALTER TABLE wind_prod.scada.turbine_readings
 ```
 
 A Texas analyst queries `SELECT * FROM wind_prod.scada.turbine_readings` and sees only Texas turbines. They do not know Oklahoma data exists. The fleet analytics team runs the same query and sees all 500 turbines. The WHERE clause is invisible and automatic — no application code changes needed.[^3]
+
+**Important: row filtering is invisible to the querying user.** An analyst querying `turbine_readings` sees only their region's data, with no indication that rows were filtered. If two analysts in different regions compare row counts, they will get different numbers — which causes confusion in practice. Best practice: document row filters in the schema description (`COMMENT ON TABLE wind_prod.scada.turbine_readings IS 'Row-filtered by region. Analysts see only their assigned region. Fleet-wide access requires the fleet-wide-access group.'`) and train analysts to expect region-scoped results. If transparency is required for a particular use case, create a view that adds a `_filter_note` column indicating that row filtering is active, so downstream consumers are aware that the result set is scoped.
 
 ## Lineage: tracing the compliance report back to raw readings
 
@@ -315,3 +329,5 @@ The next lecture covers the practical reality of getting here: migrating from Hi
 [^4]: [View data lineage using Unity Catalog](https://docs.databricks.com/aws/en/data-governance/unity-catalog/data-lineage) — Column-level lineage and retention policies.
 [^5]: [System tables reference](https://docs.databricks.com/aws/en/administration-guide/system-tables/index.html) — Audit logs, lineage tables, and billing tables.
 [^6]: [Unity Catalog product page](https://www.databricks.com/product/unity-catalog) — Overview of governance capabilities.
+[^7]: [The Impact of Row and Column Level Security with Databricks Unity Catalog on Query Performance](https://python.plainenglish.io/the-impact-of-row-and-column-level-security-with-databricks-unity-catalog-on-query-performance-25ef84981616) — Performance observations on column masking overhead.
+[^8]: [UDFs for ABAC policies best practices](https://docs.databricks.com/aws/en/data-governance/unity-catalog/abac/udf-best-practices) — Databricks documentation on optimizing masking and filtering UDFs.

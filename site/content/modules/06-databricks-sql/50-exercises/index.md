@@ -31,6 +31,35 @@ Answer the reflection questions in the exercise file:
 - An analyst says the dashboard is slow. What would you check first?
 - Your manager asks why the company needs both Snowflake and DBSQL. What is your answer?
 
+## DBSQL cost model (CalcMark)
+
+Before you spin up a warehouse, know what it costs. This CalcMark model sizes a SQL warehouse for the wind utility's 15 analysts and compares Serverless, Pro, and Snowflake side by side -- with real pricing and explicit assumptions.
+
+```sh
+# Evaluate the model (install CalcMark first if needed):
+cm eval modules/06-databricks-sql/exercises/dbsql-cost-model.cm -v
+```
+
+### What the model covers
+
+1. **Query workload profile** -- concurrency patterns, query mix, business hours
+2. **Serverless warehouse** -- Medium at $0.70/DBU, warm hours vs. query hours, realistic utilization
+3. **Pro warehouse** -- lower rate ($0.55/DBU) but longer startup forces more warm time
+4. **Snowflake equivalent** -- $3/credit list price, honest comparison of advantages on both sides
+5. **Monday morning spike** -- auto-scaling from Medium to Large during the 8am dashboard rush
+6. **Team growth** -- what happens when you double from 15 to 30 analysts
+7. **Optimization levers** -- result caching, Liquid clustering, query tagging, warehouse scheduling
+
+### Key exercise
+
+Change the assumptions and rerun. Try these scenarios:
+
+- `warm_hours_per_day = 3` -- a team that only checks dashboards twice a day
+- `sf_rate = $2.25` -- Snowflake with pre-purchased capacity
+- `warm_hours_per_day = 10` -- analysts who query all day (worst case)
+
+Which assumption moves the cost the most? That is the lever you optimize first.
+
 ## Python connector (optional, local)
 
 This exercise runs locally against your Databricks workspace. It shows how a downstream application or custom tool connects to DBSQL programmatically -- the same connection that BI tools use under the hood, exposed as a Python API.

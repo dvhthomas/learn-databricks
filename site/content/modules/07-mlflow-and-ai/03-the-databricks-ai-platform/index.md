@@ -98,6 +98,13 @@ training_set = fe.create_training_set(
 
 The Feature Store also handles **online serving** — publishing features to a low-latency store (like DynamoDB or Cosmos DB) so that real-time prediction requests can look up the latest feature values in milliseconds rather than querying Delta Lake[^2].
 
+Feature Store's online serving pushes precomputed features to a low-latency store (DynamoDB on AWS, Cosmos DB on Azure) for real-time inference. For the vibration model, this means features like `rolling_30day_rms_vibration` and `temperature_deviation_from_normal` are precomputed in a batch pipeline, published to the online store, and looked up at serving time -- ensuring the model sees the exact same feature values in production as it did in training. Without this, you'd compute features on-the-fly at serving time, risking training-serving skew (different computation logic, different data windows, different rounding).
+
+<div class="definition">
+<strong>Retrieval-Augmented Generation (RAG)</strong>
+A pattern where an LLM's response is grounded in retrieved documents rather than relying solely on its training data. For the wind utility: instead of asking an LLM "how do I replace a gearbox bearing?" and getting a generic answer, RAG retrieves the actual maintenance manual pages for your specific turbine model and feeds them to the LLM, producing an answer grounded in your documentation.
+</div>
+
 ### Vector Search: for RAG applications
 
 <div class="definition">

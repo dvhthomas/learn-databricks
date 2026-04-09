@@ -210,6 +210,20 @@ The connector uses Apache Arrow for data transfer, which is significantly faster
 
 **When to use the Python connector vs. a BI tool:** If a human needs to explore and visualize data interactively, use a BI tool. If a program needs to query data and process results, use the Python connector. The wind utility's automated daily compliance report (which queries Gold tables and generates a PDF) is a good use case for the Python connector. An analyst exploring turbine performance trends is a good use case for Tableau.
 
+### When dashboards are slow
+
+A Monday morning scenario: the operations manager opens the fleet performance dashboard and it takes 45 seconds to load. Here's the diagnostic playbook:
+
+1. **Check Query History** (DBSQL UI --> Query History). Find the slow query. Look at duration, rows scanned, and bytes read. If rows scanned is much larger than expected, the query is scanning too much data -- you need better clustering or partitioning on the Gold table.
+
+2. **Check the Query Profile.** Click into the query and open the profile. Look for: (a) large shuffle stages (data moving between nodes -- rethink the query or the table layout), (b) spill to disk (not enough memory -- upsize the warehouse for this query), (c) non-Photon operators (Python UDFs or unsupported operations falling back to JVM).
+
+3. **Check result cache.** If the same query was fast yesterday but slow today, the cache may have been invalidated by a table update. This is correct behavior -- the cache ensures fresh data. If the underlying table updates frequently (every 10 minutes), consider a `CACHE SELECT` statement for dashboards that can tolerate slight staleness.
+
+4. **Check warehouse sizing.** If the warehouse is shared among 15 analysts and multiple queries are queued, the warehouse may be undersized. Look at the 'Queued' metric in warehouse monitoring. If queries consistently queue, either upsize the warehouse or use auto-scaling (set max clusters > 1).
+
+5. **Check the Gold table.** Run `DESCRIBE DETAIL gold_table` -- look at `numFiles` and `sizeInBytes`. If there are thousands of small files, run `OPTIMIZE` to compact them. If the table isn't clustered on the columns used in WHERE/JOIN, add Liquid clustering.
+
 ## Putting it together: the analyst workflow
 
 Here is the complete workflow for your wind utility's analysts after DBSQL is set up:

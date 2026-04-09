@@ -1,0 +1,263 @@
+---
+title: "Delta Lake Storage Costs: Time Travel, VACUUM, and the Real Bill"
+description: >
+  You enabled time travel with 30-day retention. Your Bronze table is
+  append-only. How much does this actually cost — and when should you
+  VACUUM? Tweak the assumptions and rerun: cm eval delta-storage-costs.cm -v
+---
+
+# Delta Lake Storage Costs: Time Travel, VACUUM, and the Real Bill
+
+Time travel is one of Delta Lake's best features — until your cloud
+storage bill arrives. Every UPDATE, DELETE, and MERGE keeps old data
+files around so you can query historical versions. That's powerful
+for debugging, auditing, and recovery. It's also storage you're
+paying for.
+
+This model works through the real numbers for a 500-turbine wind
+utility running a medallion pipeline on Delta Lake, then shows
+exactly when VACUUM frequency becomes a financial decision.
+
+## The bottom line
+
+| | 7-day VACUUM | 30-day VACUUM | 90-day VACUUM |
+|---|---|---|---|
+| **Year 1 storage cost** | **{{yr1_cost_7d}}** | **{{yr1_cost_30d}}** | **{{yr1_cost_90d}}** |
+| **Year 3 storage cost** | **{{yr3_cost_7d}}** | **{{yr3_cost_30d}}** | **{{yr3_cost_90d}}** |
+| **Storage multiplier vs. current-only** | {{multiplier_7d}}x | {{multiplier_30d}}x | {{multiplier_90d}}x |
+| **Monthly at Year 1** | {{monthly_7d}} | {{monthly_30d}} | {{monthly_90d}} |
+
+The base data (current version only) costs about {{current_only_annual}}/year
+in S3 storage. Time travel overhead with 30-day retention roughly
+doubles that — not catastrophic, but not free. At 90 days (common
+for NERC audit compliance), you're paying about {{multiplier_90d}}x.
+
+**Storage crosses $1K/month** at roughly {{break_even_ingest}} of
+daily ingest with 30-day retention.
+
+**The rest of this document shows how we got here.** Change any
+assumption and rerun.
+
+---
+
+## Part 1: Base Storage (Current Version Only)
+
+### Daily ingest
+
+We carry forward the Module 1 sizing: 500 turbines, ~100 SCADA
+signals each, 10-minute polling intervals. After columnar compression
+at 8x, that's about 2 GB/day landing as Parquet files inside Delta
+tables. (See `wind-utility-sizing.cm` for the full derivation.)
+
+daily_ingest = 2 GB
+
+### Medallion layer sizes
+
+**Bronze** is append-only — every reading lands here, never modified.
+It grows linearly at the daily ingest rate.
+
+**Silver** applies quality checks: null readings, out-of-range values,
+duplicate timestamps. About 20% of raw SCADA readings get rejected
+(source: operational experience — SCADA systems routinely produce
+5–25% bad readings from sensor drift, communication dropouts, and
+maintenance windows). Silver retains 80% of Bronze volume.
+
+**Gold** aggregates Silver into business-ready tables: hourly capacity
+factors, daily availability metrics, monthly fleet summaries. The
+aggregation reduces volume to about 30% of Silver.
+
+bronze_daily = daily_ingest
+silver_daily = 80% of bronze_daily
+gold_daily = 30% of silver_daily
+
+current_daily = bronze_daily + silver_daily + gold_daily
+
+Over a year, the current-version-only storage accumulates:
+
+current_annual_gb = current_daily/day over 1 year
+
+S3 Standard pricing in us-east-1 is $0.023/GB/month
+([AWS S3 pricing](https://aws.amazon.com/s3/pricing/)):
+
+s3_rate = $0.023
+
+current_only_monthly = s3_rate * number(current_annual_gb) / 1073741824
+current_only_annual = current_only_monthly * 12
+
+---
+
+## Part 2: Time Travel Overhead
+
+Here's where Delta Lake's versioning costs real money. Every write
+operation that modifies existing data creates NEW Parquet files
+while keeping the OLD ones around for time travel.
+
+### Bronze: almost no overhead
+
+Bronze is append-only. New data lands as new files — nothing gets
+rewritten. Old versions of Bronze ARE the current data minus later
+appends. The transaction log grows (one small JSON file per commit),
+but the data files themselves aren't duplicated.
+
+bronze_overhead_daily = 0 GB
+
+### Silver: MERGE creates copies
+
+Silver runs a daily MERGE: match incoming Bronze records against
+existing Silver records by turbine_id + timestamp, update quality
+flags, insert new rows. Each MERGE rewrites the affected data files.
+For a daily reprocessing window that touches most of the table,
+this creates roughly 80% of Silver's current size in new files per
+day (the old files stick around for time travel).
+
+silver_overhead_daily = 80% of silver_daily
+
+### Gold: full overwrite each day
+
+Gold tables are typically overwritten daily — recompute yesterday's
+aggregates from Silver. An overwrite (INSERT OVERWRITE or
+TRUNCATE + INSERT) marks all old files as removed and writes a
+complete new set. That's 100% overhead per day.
+
+gold_overhead_daily = gold_daily
+
+### Total daily overhead
+
+overhead_daily = bronze_overhead_daily + silver_overhead_daily + gold_overhead_daily
+
+This overhead accumulates for as many days as your VACUUM retention
+allows. VACUUM deletes files no longer referenced by any version
+within the retention window.
+
+---
+
+## Part 3: VACUUM Retention Trade-offs
+
+### 7-day retention
+
+Aggressive. Saves storage but limits recovery. If a bad pipeline
+deploy corrupts Silver on Monday and nobody notices until the
+following Monday, you can't roll back.
+
+retention_7d = 7
+overhead_7d = overhead_daily * retention_7d
+total_stored_7d = current_annual_gb + overhead_7d
+multiplier_7d = number(total_stored_7d) / number(current_annual_gb)
+
+### 30-day retention (Delta Lake default)
+
+The sweet spot for most teams. Covers month-end close, most incident
+discovery windows, and gives comfortable margin for debugging
+pipeline issues.
+
+retention_30d = 30
+overhead_30d = overhead_daily * retention_30d
+total_stored_30d = current_annual_gb + overhead_30d
+multiplier_30d = number(total_stored_30d) / number(current_annual_gb)
+
+### 90-day retention
+
+Expensive, but NERC CIP audits may require proving data lineage
+over a quarter. If your compliance team needs to answer "show me
+exactly what this table looked like on March 15th," 90-day retention
+is the easy path.
+
+retention_90d = 90
+overhead_90d = overhead_daily * retention_90d
+total_stored_90d = current_annual_gb + overhead_90d
+multiplier_90d = number(total_stored_90d) / number(current_annual_gb)
+
+### Annual costs by retention
+
+yr1_cost_7d = s3_rate * number(total_stored_7d) / 1073741824 * 12
+yr1_cost_30d = s3_rate * number(total_stored_30d) / 1073741824 * 12
+yr1_cost_90d = s3_rate * number(total_stored_90d) / 1073741824 * 12
+
+monthly_7d = yr1_cost_7d / 12
+monthly_30d = yr1_cost_30d / 12
+monthly_90d = yr1_cost_90d / 12
+
+---
+
+## Part 4: 3-Year Projection
+
+US wind capacity has grown ~10% annually over the past decade
+(source: ACP/AWEA annual market reports). As the fleet grows,
+so does every layer of storage:
+
+yr1_base = total_stored_30d
+yr3_base = compound yr1_base by 10% over 3 years
+
+yr3_cost_7d = compound yr1_cost_7d by 10% over 3 years
+yr3_cost_30d = compound yr1_cost_30d by 10% over 3 years
+yr3_cost_90d = compound yr1_cost_90d by 10% over 3 years
+
+yr3_monthly_30d = yr3_cost_30d / 12
+
+---
+
+## Part 5: When to Worry
+
+### When does storage exceed $1K/month?
+
+At $0.023/GB/month with a 30-day VACUUM multiplier of
+{{multiplier_30d}}x, the break-even daily ingest for a $1K/month
+storage bill:
+
+target_monthly = $1000
+effective_multiplier = multiplier_30d
+break_even_gb = number(target_monthly) / number(s3_rate) / number(effective_multiplier)
+break_even_ingest = break_even_gb / 365 * 1 GB
+
+Our wind utility at {{daily_ingest}}/day is well under that. Storage
+is NOT the expensive line item — compute (SQL warehouses, ETL
+clusters) dominates the Databricks bill by 10–20x. But storage
+costs are sneaky because they only go up: compute scales to zero
+when idle, storage doesn't.
+
+### When does VACUUM frequency matter financially?
+
+The difference between 7-day and 90-day retention:
+
+retention_spread_annual = yr1_cost_90d - yr1_cost_7d
+
+That's {{retention_spread_annual}}/year — the price of audit-friendly
+retention. For a wind utility under NERC CIP, that's pocket change
+compared to the $1M+ fine for not being able to demonstrate data
+lineage.
+
+### The real VACUUM decision
+
+VACUUM isn't primarily a cost decision. It's a **recovery window**
+decision. The questions to ask:
+
+- How fast does your team notice pipeline bugs? (7 days? 30 days?)
+- Does your compliance framework require historical point-in-time queries?
+- Do downstream consumers (ML models, reports) need reproducible results from last month?
+
+Set retention to match your longest incident discovery window, not
+your storage budget. If storage becomes a real problem, the fix is
+usually partitioning + targeted VACUUM on specific tables — not
+a blanket reduction in retention.
+
+---
+
+## Detailed Breakdown (computed)
+
+| Layer | Daily current | Daily overhead | 30-day overhead total |
+|-------|--------------|----------------|----------------------|
+| Bronze (append-only) | {{bronze_daily}} | {{bronze_overhead_daily}} | — |
+| Silver (daily MERGE) | {{silver_daily}} | {{silver_overhead_daily}} | {{silver_overhead_30d}} |
+| Gold (daily overwrite) | {{gold_daily}} | {{gold_overhead_daily}} | {{gold_overhead_30d}} |
+| **Total** | **{{current_daily}}** | **{{overhead_daily}}** | **{{overhead_30d}}** |
+
+silver_overhead_30d = silver_overhead_daily * retention_30d
+gold_overhead_30d = gold_overhead_daily * retention_30d
+
+### Try it yourself
+
+Change `daily_ingest = 20 GB` at the top (a larger fleet, or
+higher-frequency SCADA polling) and rerun. Or set all three
+retentions to 1 day to see the theoretical minimum storage cost.
+The point isn't the exact numbers — it's understanding which knob
+moves which cost.

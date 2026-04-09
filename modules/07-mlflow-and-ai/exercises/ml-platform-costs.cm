@@ -1,0 +1,457 @@
+---
+title: "ML Platform Costs: Databricks AI vs. SageMaker vs. DIY for Predictive Maintenance"
+description: >
+  Your vibration model needs weekly retraining, real-time serving, and
+  experiment tracking. What does each ML platform actually cost?
+  Tweak the assumptions and rerun: cm eval ml-platform-costs.cm -v
+---
+
+# ML Platform Costs: Databricks AI vs. SageMaker vs. DIY
+
+You proved the vibration model works in a notebook — 94% recall on
+bearing failure prediction. Now it needs to run in production: weekly
+retraining, real-time scoring, experiment tracking, drift monitoring.
+Three paths. Very different price tags. Very different trade-offs.
+
+## The bottom line
+
+| Platform | Monthly | Annual |
+|----------|---------|--------|
+| **Databricks AI** | **{{db_ml_monthly}}** | **{{db_ml_annual}}** |
+| **AWS SageMaker** | **{{sm_ml_monthly}}** | **{{sm_ml_annual}}** |
+| **DIY (MLflow OSS + VMs)** | **{{diy_total_monthly}}** | **{{diy_total_annual}}** |
+| DIY (infra only, no ops labor) | {{diy_ml_monthly}} | {{diy_ml_annual}} |
+
+The DIY path looks cheapest until you account for the 10 hours/month
+someone spends keeping 5 services alive. SageMaker wins on raw
+infrastructure cost. Databricks wins if you're already on the
+platform — MLflow tracking and Lakehouse Monitoring are included,
+and your feature tables are already in Delta.
+
+**The rest of this document shows how we got here.** Every assumption
+is explained. Disagree with a number? Change it and rerun.
+
+---
+
+## The Wind Utility ML Workload
+
+Before pricing anything, nail down what the workload actually is.
+
+### The model
+
+One primary model: bearing failure prediction from vibration and
+temperature data. An Isolation Forest or gradient-boosted classifier
+trained on 6 months of historical SCADA readings. Not a massive
+neural network — this is tabular ML on structured sensor data.
+
+### Training
+
+Retrain weekly on the latest 6 months of data. The feature table
+is precomputed rolling statistics (mean, std, kurtosis of vibration
+over 1h/6h/24h windows) joined with temperature and power output.
+
+feature_table_size = 50 GB
+training_hours_per_run = 6
+training_runs_per_week = 1
+
+A single GPU node (NVIDIA A10G or T4) handles this. You don't need
+a multi-node GPU cluster for tabular ML on 50 GB — that's a common
+over-provisioning mistake. One node, 6 hours, done.
+
+### Serving
+
+Real-time scoring: each turbine gets a risk score once per hour.
+"This bearing has a 73% chance of failure in 48 hours." The model
+is small (a few MB serialized), inference is fast (sub-millisecond
+per prediction), but the endpoint runs 24/7.
+
+turbines = 500
+predictions_per_hour = turbines
+hours_per_month = 24 * 30
+
+predictions_per_month = predictions_per_hour * hours_per_month
+
+That's predictions_per_month predictions/month. Trivial volume —
+a single CPU endpoint handles this with room to spare.
+
+### Experiment tracking and monitoring
+
+During active development: ~50 experiment runs/month as the data
+science team tries different feature windows, contamination
+thresholds, and model architectures. In steady-state production:
+4 runs/month (the weekly retrains).
+
+dev_runs_per_month = 50
+prod_runs_per_month = 4
+
+Model monitoring tracks prediction distribution over time and
+flags drift — if the model starts predicting "high risk" for 40%
+of turbines instead of the usual 5%, something changed (sensor
+calibration? seasonal pattern? actual problem?).
+
+---
+
+## Databricks AI Costs
+
+If you're already running the SCADA pipeline on Databricks (Modules
+1–6), the ML platform is an incremental cost on top of existing
+infrastructure. MLflow tracking is built into the workspace. Feature
+tables live in Delta. That's the pitch — and it's a real advantage.
+
+### Training compute
+
+Interactive GPU cluster for model development and weekly retraining.
+All-Purpose Compute at $0.40/DBU because data scientists need to
+iterate in notebooks during development. A GPU-equipped cluster
+(1 A10G node) consumes ~24 DBUs/hour.
+
+db_dbu_rate = $0.40
+db_train_dbus_per_hour = 24
+db_train_hours_per_week = 6
+
+db_train_weekly = db_dbu_rate * db_train_dbus_per_hour * db_train_hours_per_week
+db_train_monthly = db_train_weekly * 4
+
+In production you could switch weekly retrains to Jobs Compute at
+$0.15/DBU and cut this by 60%. We use All-Purpose as the
+conservative case where the team is still actively developing.
+
+### Model Serving
+
+A small CPU endpoint running 24/7 for real-time scoring. Model
+Serving endpoints bill at roughly All-Purpose rates, ~4 DBUs/hour
+for a small instance. This is sized for our 500 predictions/hour —
+well within a single small endpoint's capacity.
+
+db_serve_dbus_per_hour = 4
+db_serve_monthly = db_dbu_rate * db_serve_dbus_per_hour * 24 * 30
+
+### MLflow tracking
+
+Included. No separate charge. Runs on the workspace's managed
+infrastructure. This is one of Databricks' strongest selling
+points for ML — you don't pay extra for experiment tracking,
+model registry, or the tracking UI. Compare that to managing
+your own MLflow server.
+
+### Feature Store (online)
+
+The feature table lives in Delta (offline store — already paid for
+in your storage costs). For real-time serving, you need an online
+store. Databricks Feature Serving backs to DynamoDB or Cosmos DB.
+
+500 turbines x 1 lookup/hour x 730 hours/month = 365,000 reads.
+At $0.25/million reads plus ~1 GB of storage, this is tiny:
+
+db_feature_store_monthly = $25
+
+### Lakehouse Monitoring
+
+Included with the workspace. Tracks prediction distribution,
+detects drift, generates alerts. No additional charge — another
+bundled benefit of the platform.
+
+### Cloud infrastructure
+
+Databricks runs on your cloud account. The GPU instances, serving
+VMs, and networking appear on your AWS/Azure bill separately.
+Typically 50% on top of DBU spend for this type of workload:
+
+db_cloud_infra = 50% of (db_train_monthly + db_serve_monthly)
+
+### Databricks ML total
+
+db_ml_monthly = db_train_monthly + db_serve_monthly + db_feature_store_monthly + db_cloud_infra
+db_ml_annual = db_ml_monthly * 12
+
+---
+
+## AWS SageMaker Costs
+
+SageMaker is a purpose-built ML platform. It doesn't share
+infrastructure with your data pipeline — that's both a strength
+(optimized for ML workflows) and a weakness (another platform
+to manage, another bill to understand).
+
+### Training
+
+ml.g4dn.xlarge: 1 NVIDIA T4 GPU, 4 vCPUs, 16 GB RAM. Plenty for
+tabular ML on 50 GB. $0.526/hour on-demand (source: [AWS SageMaker
+pricing](https://aws.amazon.com/sagemaker/pricing/)).
+
+sm_train_rate = $0.526
+sm_train_hours_per_week = 6
+
+sm_train_weekly = sm_train_rate * sm_train_hours_per_week
+sm_train_monthly = sm_train_weekly * 4
+
+You could use spot instances and cut this further, but SageMaker
+managed spot has some quirks with checkpointing. On-demand is the
+safe estimate.
+
+### Serving
+
+ml.t2.medium: 2 vCPUs, 4 GB RAM. $0.065/hour for a real-time
+endpoint running 24/7. Overkill for 500 predictions/hour, but
+it's the smallest real-time endpoint available.
+
+sm_serve_rate = $0.065
+sm_serve_monthly = sm_serve_rate * 24 * 30
+
+A serverless inference endpoint could be cheaper at this volume
+(you pay per invocation), but serverless endpoints have cold start
+latency that may not work for alerting use cases.
+
+### Experiment tracking
+
+SageMaker Experiments is included — no additional charge. The UI is
+less polished than MLflow's, but it tracks parameters, metrics, and
+artifacts. If you're already in the AWS ecosystem, it works.
+
+### Feature Store
+
+SageMaker Feature Store: $0.06 per 1,000 read requests for the
+online store, plus storage. At our volume (365K reads/month), the
+compute cost is negligible. Storage and base fees bring it to ~$15:
+
+sm_feature_store_monthly = $15
+
+### Model monitoring
+
+SageMaker Model Monitor runs a processing job on a schedule to
+check for data drift and prediction quality. For a single model
+with weekly checks:
+
+sm_monitor_monthly = $50
+
+### SageMaker ML total
+
+sm_ml_monthly = sm_train_monthly + sm_serve_monthly + sm_feature_store_monthly + sm_monitor_monthly
+sm_ml_annual = sm_ml_monthly * 12
+
+---
+
+## DIY: MLflow OSS + Cloud VMs
+
+The scrappy path. Open-source MLflow, spot GPU instances for
+training, a Flask endpoint for serving. Maximum control, minimum
+vendor lock-in, maximum operational burden.
+
+### Training
+
+GPU spot instance (g4dn.xlarge) at ~$0.20/hour — roughly 60% off
+on-demand. Spot is fine for training because you can checkpoint and
+resume. The risk is interruption, but for a 6-hour weekly job,
+you'll typically complete without issues.
+
+diy_train_rate = $0.20
+diy_train_hours_per_week = 6
+
+diy_train_weekly = diy_train_rate * diy_train_hours_per_week
+diy_train_monthly = diy_train_weekly * 4
+
+### Serving
+
+Flask or FastAPI behind a load balancer on a t3.medium ($0.042/hour).
+Handles 500 predictions/hour trivially. You write the serving code,
+the health checks, the autoscaling rules, and the deployment pipeline.
+
+diy_serve_monthly = $0.042 * 24 * 30
+
+### MLflow OSS server
+
+Self-hosted on a small VM ($0.05/hour for a t3.small, 24/7). Stores
+experiment metadata in Postgres, artifacts in S3. You manage the
+server, the database, the backups, and the upgrades.
+
+diy_mlflow_monthly = $0.05 * 24 * 30
+
+### Feature Store
+
+Managed Redis (ElastiCache) or Postgres (RDS) for online features.
+A small managed instance runs ~$50/month:
+
+diy_feature_store_monthly = $50
+
+### Monitoring
+
+Prometheus + Grafana for infrastructure metrics, plus either
+Evidently AI (OSS, self-hosted) or a managed observability stack
+for prediction monitoring. A small managed Grafana instance:
+
+diy_monitor_monthly = $50
+
+### DIY infrastructure total
+
+diy_ml_monthly = diy_train_monthly + diy_serve_monthly + diy_mlflow_monthly + diy_feature_store_monthly + diy_monitor_monthly
+diy_ml_annual = diy_ml_monthly * 12
+
+### The hidden cost: engineering time
+
+Here's where DIY gets expensive. You're running 5 services:
+training pipeline, serving endpoint, MLflow server, feature store,
+monitoring stack. Each one needs patching, scaling, debugging,
+and on-call rotation.
+
+Conservative estimate: 10 hours/month of ops work. That's ~2.5
+hours/week — one MLflow upgrade, one serving endpoint restart, one
+monitoring alert investigation, one training pipeline failure.
+
+engineer_hourly_rate = $80
+ops_hours_per_month = 10
+diy_ops_monthly = engineer_hourly_rate * ops_hours_per_month
+
+The $80/hour rate is a blended cost — not the engineer's salary,
+but the loaded cost of their time (salary + benefits + overhead,
+divided by productive hours). A $160K/year engineer at ~2,000
+productive hours/year = $80/hour.
+
+### DIY total (with ops labor)
+
+diy_total_monthly = diy_ml_monthly + diy_ops_monthly
+diy_total_annual = diy_total_monthly * 12
+
+---
+
+## The Hidden Cost: Time to First Model
+
+Infrastructure cost is the ongoing bill. But there's a one-time
+cost that's easy to ignore: how long before the vibration model
+is actually running in production, scoring turbines, and catching
+failures?
+
+### Databricks
+
+MLflow is integrated. Model Serving is a button click. Feature
+tables are already in Delta from your SCADA pipeline. The data
+scientist can go from notebook experiment to production endpoint
+in **1–2 weeks**. Most of that time is model development, not
+infrastructure.
+
+db_time_to_prod = 2 weeks
+
+### SageMaker
+
+Steeper learning curve. SageMaker has its own concepts (training
+jobs, endpoints, endpoint configurations, model packages) that
+don't map 1:1 to what the team knows from MLflow. The data lives
+in Databricks/Delta, so you need a data export pipeline to S3.
+**3–4 weeks**, with most of the extra time on infrastructure setup
+and data plumbing.
+
+sm_time_to_prod = 4 weeks
+
+### DIY
+
+Before anyone touches a model, someone has to set up: MLflow
+server, Postgres backend, S3 artifact store, serving infrastructure,
+CI/CD for model deployment, monitoring, and alerting. **4–8 weeks**
+of infrastructure work before the data scientist can even start
+iterating in a tracked environment.
+
+diy_time_to_prod = 8 weeks
+
+### Opportunity cost
+
+Every week without a production model is a week without
+automated bearing failure alerts. At 2 missed failures/year
+($500K each), that's roughly:
+
+missed_failure_cost = $1000000
+weeks_per_year = 52
+delay_cost_per_week = missed_failure_cost / weeks_per_year
+
+The delay cost is real: delay_cost_per_week per week of delayed
+deployment. Databricks' 6-week advantage over DIY is worth
+roughly 6 * delay_cost_per_week in avoided risk — about
+{{6 * delay_cost_per_week}}.
+
+---
+
+## When Each Platform Wins
+
+### Databricks AI wins when:
+
+- You're already running your data pipeline on Databricks (Modules
+  1–6). The incremental cost of ML is small — MLflow tracking and
+  Lakehouse Monitoring are free, your features are already in Delta.
+- Governance matters. Unity Catalog tracks which model version was
+  trained on which data, who approved the promotion to production,
+  and what the prediction accuracy was at each stage. NERC auditors
+  love this.
+- You have fewer than ~10 models. Databricks Model Serving is
+  simple but not as feature-rich as SageMaker for complex ML ops.
+
+### SageMaker wins when:
+
+- You're AWS-native and your data is already in S3. No reason to
+  add a Databricks dependency just for ML.
+- You need advanced ML ops: A/B testing between model versions,
+  multi-model endpoints, automatic scaling based on traffic
+  patterns, shadow deployments.
+- You're running 10+ models in production. SageMaker's ML ops
+  tooling (Pipelines, Model Monitor, endpoint auto-scaling) is
+  more mature for large-scale ML operations.
+
+### DIY wins when:
+
+- Cost is the dominant constraint and you have ops skills on the
+  team. The infrastructure bill is 2–3x cheaper.
+- You have 1–2 simple models with infrequent retraining. The ops
+  burden scales with the number of services, not the number of
+  predictions.
+- Vendor lock-in is unacceptable. MLflow OSS runs anywhere. Your
+  training code is plain Python. Nothing ties you to a cloud
+  provider.
+
+### The honest take
+
+For the wind utility — already on Databricks, one primary model,
+NERC compliance requirements, a 2-person data science team that
+should be building models and not managing infrastructure — **Databricks
+is the right call**. The infrastructure cost is higher than DIY,
+but the time-to-production advantage and the governance story
+justify it.
+
+If this were a startup with 3 engineers, no compliance requirements,
+and one simple model? DIY with MLflow OSS every time.
+
+---
+
+## Detailed Breakdown
+
+| Item | Monthly | Annual |
+|------|---------|--------|
+| **Databricks AI** | | |
+| Training (All-Purpose, GPU, 6h/week) | {{db_train_monthly}} | {{db_train_monthly * 12}} |
+| Model Serving (24/7, small CPU) | {{db_serve_monthly}} | {{db_serve_monthly * 12}} |
+| Feature Store (DynamoDB online) | {{db_feature_store_monthly}} | {{db_feature_store_monthly * 12}} |
+| Cloud infrastructure (50% of compute) | {{db_cloud_infra}} | {{db_cloud_infra * 12}} |
+| MLflow tracking | included | included |
+| Lakehouse Monitoring | included | included |
+| **Databricks total** | **{{db_ml_monthly}}** | **{{db_ml_annual}}** |
+| | | |
+| **AWS SageMaker** | | |
+| Training (g4dn.xlarge, 6h/week) | {{sm_train_monthly}} | {{sm_train_monthly * 12}} |
+| Serving (t2.medium, 24/7) | {{sm_serve_monthly}} | {{sm_serve_monthly * 12}} |
+| Feature Store (online) | {{sm_feature_store_monthly}} | {{sm_feature_store_monthly * 12}} |
+| Model Monitor | {{sm_monitor_monthly}} | {{sm_monitor_monthly * 12}} |
+| Experiment tracking | included | included |
+| **SageMaker total** | **{{sm_ml_monthly}}** | **{{sm_ml_annual}}** |
+| | | |
+| **DIY (MLflow OSS + VMs)** | | |
+| Training (spot GPU, 6h/week) | {{diy_train_monthly}} | {{diy_train_monthly * 12}} |
+| Serving (Flask on t3.medium, 24/7) | {{diy_serve_monthly}} | {{diy_serve_monthly * 12}} |
+| MLflow server (t3.small, 24/7) | {{diy_mlflow_monthly}} | {{diy_mlflow_monthly * 12}} |
+| Feature Store (managed Redis/Postgres) | {{diy_feature_store_monthly}} | {{diy_feature_store_monthly * 12}} |
+| Monitoring (Prometheus + Grafana) | {{diy_monitor_monthly}} | {{diy_monitor_monthly * 12}} |
+| **DIY infra total** | **{{diy_ml_monthly}}** | **{{diy_ml_annual}}** |
+| Ops engineering (10h/month @ $80/hr) | {{diy_ops_monthly}} | {{diy_ops_monthly * 12}} |
+| **DIY total (with labor)** | **{{diy_total_monthly}}** | **{{diy_total_annual}}** |
+
+### Try it yourself
+
+Change `training_hours_per_run = 12` and rerun — that's what
+happens if you switch from an Isolation Forest to a gradient-boosted
+ensemble that needs hyperparameter tuning. Or set `turbines = 2000`
+to see how serving costs scale with fleet size.

@@ -60,6 +60,16 @@ The team iterated through dozens of model variants. The one they deployed was "t
 A change in the statistical distribution of input features between training and serving. If a model was trained on summer vibration patterns (higher ambient temperatures, different thermal expansion) and deployed into winter (lower temperatures, different vibration baselines), the inputs it sees in production are outside the distribution it learned from. The model's predictions become unreliable even though nothing about the model itself changed.
 </div>
 
+There are actually three distinct types of drift, and they require different responses:
+
+1. **Input drift (covariate shift)** -- The distribution of input features changes. Example: a new wind farm in a colder climate sends vibration readings with different baseline patterns. The model hasn't seen these patterns and misclassifies them. Fix: retrain on data that includes the new climate zone.
+
+2. **Label drift (prior probability shift)** -- The frequency of the target changes. Example: a batch of bearings from a new supplier fails at 2x the historical rate. The model was calibrated for the old failure rate and under-alerts. Fix: update the decision threshold or retrain with recent data.
+
+3. **Concept drift** -- The relationship between features and the target changes. Example: a firmware update changes how vibration is measured, so the same bearing condition produces different sensor values. The old model's learned patterns are now wrong. Fix: retrain from scratch with post-firmware data.
+
+MLflow doesn't detect drift automatically -- but it gives you the tools to investigate. Compare the feature distributions of training data (logged as an artifact) with current production data to identify which type of drift occurred.
+
 The model was trained on 18 months of data, but the training set was dominated by summer readings (the wind utility had a data gap during a SCADA system migration in winter 2024). When winter arrived, vibration patterns looked different from anything in the training set. The model's confidence scores dropped, but nobody was monitoring them.
 
 ## The gap between experimentation and production
@@ -106,6 +116,8 @@ Predictive maintenance has an asymmetric cost structure that makes ML failures e
 | Missed bearing failure | ~$200,000 (crane, parts, lost generation) | 3 | $600,000 |
 | False alarm dispatch | ~$2,400 (truck roll, technician time) | 200 | $480,000 |
 | **Total** | | | **$1,080,000** |
+
+A quick clarification on what "94% recall" means here: recall measures the fraction of actual bearing failures that the model catches. 94% recall means the model detected 94 out of every 100 real failures. The flip side is **precision** -- the fraction of the model's alerts that are real failures (as opposed to false alarms). In production, the model's precision dropped dramatically: it flagged 200 alerts but only a handful were real. The cost asymmetry matters: a missed failure costs $200K (emergency crane), a false alarm costs $2,400 (dispatch a technician who finds nothing). With this asymmetry, you want high recall (catch every failure) but the false alarm cost adds up fast at 200 dispatches.
 
 Compare this to the alternative: scheduled inspections every 6 months cost roughly $800 per turbine. For 500 turbines, that's $400,000/year — predictable and budgetable. The broken ML model cost more in one quarter than a year of scheduled inspections.
 

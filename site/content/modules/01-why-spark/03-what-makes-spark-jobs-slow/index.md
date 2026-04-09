@@ -102,6 +102,8 @@ Approximate order-of-magnitude comparison (these are rough figures for intuition
 
 A shuffle turns an in-memory operation into a disk + network + serialization operation. That's often a 10–100x slowdown.
 
+A common question: "If I double my executor memory, does shuffle get faster?" Usually no. Shuffle cost is dominated by network transfer and serialization, not memory. More memory helps if you're spilling (intermediate data overflowing to disk — see the Spark UI section below), but the fundamental bottleneck is moving data between machines. The fix is reducing the amount of data that moves: filter before joining, use broadcast joins for small tables, or pre-partition your data on the join key so matching rows are already co-located and no shuffle is needed.
+
 ## Stages: where the boundaries are
 
 Spark uses shuffles to divide your job into **stages**.
@@ -137,7 +139,7 @@ When you run a Spark job on Databricks, the Spark UI shows you exactly what happ
 The most important numbers in the Spark UI for performance:
 - **Shuffle Read / Shuffle Write** — how much data crossed the network
 - **Task duration distribution** — are some tasks much slower than others? (this indicates data skew — e.g., one turbine with 10x more readings than others)
-- **Spill (Memory) / Spill (Disk)** — did executors run out of memory and spill to disk?
+- **Spill (Memory) / Spill (Disk)** — did executors run out of memory and spill to disk? **Spill** means a partition exceeded available execution memory and Spark wrote intermediate data to disk. "Spill (Memory)" shows bytes that were moved from execution memory to a temporary in-memory buffer before being written out; "Spill (Disk)" shows bytes actually written to local disk. Any spill means your partitions are too large or your executors need more memory. Even modest spill degrades performance significantly because it turns an in-memory operation into a disk I/O operation.
 
 If a job is slow, look at the Spark UI first. The shuffle metrics will almost always point you to the problem.
 
@@ -160,6 +162,8 @@ The instinct to develop: before writing a transformation, ask yourself "does thi
 Spark shuffles are inherently expensive, but Databricks has invested heavily in making them less painful:
 
 **Photon engine.** Databricks' native execution engine, written in C++, that replaces the JVM-based Spark engine for supported operations. Photon runs by default on SQL warehouses and serverless compute[^2]. It is particularly effective at shuffle-heavy operations through **vectorized shuffle** — keeping data in compact columnar format and processing multiple values simultaneously using SIMD instructions, yielding roughly 1.5x higher throughput on CPU-bound workloads like large joins and wide aggregations[^3].
+
+When does Photon *not* help? Photon accelerates scan, filter, aggregate, and join operations on structured data. It doesn't help with: (1) **Python UDFs**, which run in a separate Python process regardless of the execution engine — Photon can't optimize code that runs outside the engine; (2) **complex nested data types** that can't be vectorized efficiently; or (3) **operations that are already network-bound** — Photon makes computation faster, not the network, so a shuffle-dominated job won't see dramatic improvement from Photon alone. You can check whether a query used Photon by looking at the query profile in Databricks SQL — Photon-accelerated operators show as `PhotonGroupBy` or `PhotonHashJoin` instead of their standard Spark equivalents (`HashAggregate`, `SortMergeJoin`).
 
 **Adaptive Query Execution (AQE).** Enabled by default in Spark 3.0+ and on all Databricks runtimes, AQE dynamically adjusts the query plan *during* execution based on actual runtime statistics[^4]. Key capabilities:
 

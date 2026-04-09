@@ -186,6 +186,20 @@ When asked "should a customer use DLT or dbt?", the worst answer is picking one 
 
 That answer demonstrates nuance. It shows you understand both tools. And it starts with the customer's problem, not the vendor's product.
 
+## When DLT pipelines produce wrong data
+
+The scariest DLT failure is not a crash -- it is a pipeline that runs successfully but produces incorrect results. Common causes:
+
+1. **Expectation thresholds too loose** -- `@dlt.expect` warns but does not drop. If you are monitoring, you see the warning. If you are not watching the quality dashboard, bad data flows through.
+2. **Stale streaming checkpoint** -- if you change a streaming table's logic but do not reset the checkpoint, DLT continues from where it left off with the OLD logic applied to already-processed data. Fix: full refresh (`pipelines.reset()` or toggle in the UI).
+3. **Batch table picks up partial upstream data** -- a `dlt.read()` Gold table recomputes from Silver, but Silver's streaming update has not finished. Gold sees a partial day. Fix: use `dlt.read_stream()` for Gold too, or schedule Gold to run after Silver completes.
+
+Debugging approach: check the pipeline's event log first (`event_type = 'flow_progress'` for data quality, `event_type = 'update_progress'` for pipeline state). The lineage graph in the DLT UI shows which tables updated and when.[^1]
+
+## DLT cost context
+
+DLT pipelines run on a dedicated compute SKU that costs more per DBU than standard Jobs compute. On AWS Premium tier, DLT compute is approximately $0.20/DBU (vs. $0.15/DBU for standard Jobs).[^6] For the wind utility's SCADA pipeline processing approximately 2 GB/day, this premium is small in absolute terms -- maybe $50-100/month more than an equivalent hand-coded Spark job. The value proposition is: DLT's quality tracking, automatic retry, and lineage would cost more than $100/month of engineering time to build manually. For large-scale pipelines (TBs/day), the DBU premium becomes significant and you should benchmark DLT vs. plain Spark with your own orchestration.
+
 **Key takeaway: DLT, Airflow, and dbt solve different problems at different levels of the stack. Airflow is an orchestrator (triggers things in order), DLT is a pipeline engine (transforms data with quality tracking), and dbt is a SQL transformation framework (portable batch transforms). In production, they are often used together: Airflow triggers DLT for streaming ingestion, DLT handles quality enforcement in Bronze/Silver, and dbt builds Gold-layer analytics tables. The decision depends on the customer's streaming needs, portability requirements, and compliance obligations -- not on which tool is "best."**
 
 ---

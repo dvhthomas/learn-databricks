@@ -1,0 +1,390 @@
+---
+title: "Databricks SQL Cost Model: Warehouse Sizing for the Wind Utility"
+description: >
+  15 analysts need to query Gold tables. How do you size the warehouse
+  and what does it cost? Serverless vs. Pro vs. Snowflake — with real
+  numbers. Tweak the assumptions and rerun: cm eval dbsql-cost-model.cm -v
+---
+
+# Databricks SQL Cost Model: Warehouse Sizing for the Wind Utility
+
+Your wind utility has 15 analysts who need governed access to Gold
+tables — fleet capacity factors, turbine health summaries, compliance
+reports. They currently each maintain their own CSV extracts and
+the CFO sees different numbers in every meeting.
+
+DBSQL fixes the "different numbers" problem. But what does it cost,
+and how does it compare to Snowflake?
+
+## The bottom line
+
+| Scenario | Monthly | Annual |
+|----------|---------|--------|
+| **Serverless (Medium, baseline)** | **{{serverless_monthly}}** | **{{serverless_annual}}** |
+| **Serverless + Monday spike** | **{{total_with_spike_monthly}}** | **{{total_with_spike_annual}}** |
+| **Pro warehouse** | **{{pro_monthly}}** | **{{pro_annual}}** |
+| **Snowflake equivalent** | **{{sf_monthly}}** | **{{sf_annual}}** |
+| **Serverless, 30 analysts** | **{{scaled_monthly}}** | **{{scaled_annual}}** |
+
+Serverless costs more per DBU but less in practice — it suspends
+in seconds, so you pay for fewer idle hours. Pro has a lower rate
+but longer startup forces you to keep the warehouse warm longer.
+Snowflake is in the same ballpark at list price, but the comparison
+is more nuanced than just compute cost (see Section 6).
+
+**The rest of this document shows how we arrived at these numbers.**
+Every assumption is explained. Disagree with a number? Change it
+and rerun.
+
+---
+
+## Section 1: Query Workload Profile
+
+Before sizing anything, understand how the warehouse will actually
+be used. 15 analysts does not mean 15 simultaneous queries — it
+means bursts of activity clustered around meetings and deadlines.
+
+analysts = 15
+
+### Concurrency pattern
+
+Monday morning is the spike. Everyone opens their ops dashboards
+before the 8:30am fleet status meeting. After that, activity drops
+to a steady hum of ad-hoc analysis through the day.
+
+peak_concurrent = 10
+avg_concurrent = 4
+
+### Query mix
+
+Not all queries are equal. A dashboard refresh hitting a
+pre-aggregated Gold table is nothing like a complex join across
+3 years of turbine telemetry:
+
+- **70% simple dashboards** — current fleet status, capacity
+  factors, alert counts. Sub-5 second queries against Gold tables
+  with good clustering. These are the bread and butter.
+- **20% ad-hoc analysis** — "show me all turbines where capacity
+  factor dropped more than 10% month-over-month." 5–30 seconds,
+  hitting Silver or Gold with filters.
+- **10% complex joins** — SCADA readings joined to weather data
+  joined to maintenance records. 30 seconds to 2 minutes. These
+  are the ones that stress the warehouse.
+
+### Business hours
+
+The warehouse only needs to be active during working hours. Nobody
+is running fleet dashboards at 2am (the on-call pipeline handles
+alerts — that runs on a Jobs cluster, not the SQL warehouse):
+
+hours_per_day = 10
+workdays = 22
+monthly_business_hours = hours_per_day * workdays
+
+---
+
+## Section 2: Serverless Warehouse
+
+Serverless is the default recommendation for analyst workloads.
+Databricks manages the VMs — the warehouse starts in about 2
+seconds and suspends automatically when idle. You pay per DBU
+while the warehouse is warm.
+
+### Pricing
+
+Serverless SQL: $0.70/DBU on AWS Premium tier (source:
+[Mammoth Analytics pricing guide](https://mammoth.io/blog/databricks-pricing-2/)).
+This is the most expensive workload type, but you trade a higher
+rate for lower utilization — no paying for idle clusters.
+
+serverless_rate = $0.70
+
+### Warehouse size
+
+A Medium warehouse consumes 8 DBUs/hour. Medium handles 8–12
+concurrent queries comfortably — enough for our average load,
+and auto-scaling can bump to Large during the Monday spike
+(Section 5).
+
+medium_dbus = 8
+
+### The key insight: warm time, not query time
+
+You do not pay for the seconds your query runs. You pay for the
+hours the warehouse is WARM — spun up and ready to accept queries.
+With serverless, the warehouse suspends within seconds of the last
+query completing. But in practice, analysts cluster their work:
+run a query, look at results, tweak, run again. The warehouse
+stays warm through these sessions.
+
+Realistic warm hours are less than the full 10-hour business day.
+Analysts take meetings, write emails, eat lunch. Activity clusters
+into 2–3 concentrated sessions per day with gaps where the
+warehouse suspends:
+
+warm_hours_per_day = 6
+
+This is a judgment call. If your analysts are power users who
+query constantly, bump it to 8. If they mostly check dashboards
+twice a day, drop it to 3. The number matters — try both
+extremes and see how the cost shifts.
+
+### Monthly and annual
+
+serverless_monthly = serverless_rate * medium_dbus * warm_hours_per_day * workdays
+serverless_annual = serverless_monthly * 12
+
+At serverless_monthly/month, this is the cost of replacing 15
+analysts' individual CSV extracts with governed, consistent,
+always-current Gold table access. Compare that to the cost of
+the CFO making a bad decision because everyone's numbers
+disagree.
+
+---
+
+## Section 3: Pro Warehouse Alternative
+
+Pro warehouses use the same compute but at a lower DBU rate.
+The trade-off is startup time: 5–10 minutes instead of 2 seconds.
+
+### Pricing
+
+Pro SQL: $0.55/DBU on AWS Premium tier (source: same Mammoth
+guide). That is a 21% discount per DBU versus serverless.
+
+pro_rate = $0.55
+
+### The startup penalty
+
+With a 5–10 minute cold start, you cannot afford to let the
+warehouse suspend between query bursts. An analyst who waits
+8 minutes for a dashboard to load will never use the platform
+again. So you set the auto-suspend timeout higher — typically
+10 minutes — which means the warehouse stays warm through gaps
+that serverless would have suspended through.
+
+Net effect: lower rate per hour, but more hours billed.
+
+pro_warm_hours = 8
+
+### Monthly and annual
+
+pro_monthly = pro_rate * medium_dbus * pro_warm_hours * workdays
+pro_annual = pro_monthly * 12
+
+Pro comes in at pro_monthly/month — only slightly different from
+serverless despite the lower rate. The extra warm hours eat most
+of the per-DBU savings. This is why Databricks pushes serverless
+for interactive workloads: the economics favor fast suspend/resume
+over cheap-but-idle compute.
+
+### When Pro makes sense
+
+Pro wins when the warehouse runs continuously — e.g., a reporting
+server that queries every 5 minutes around the clock. In that
+scenario, the warehouse never suspends anyway, so you get the
+lower rate without the startup penalty.
+
+---
+
+## Section 4: Snowflake Equivalent
+
+Every DBSQL conversation eventually becomes "so how does this
+compare to Snowflake?" Here is an honest, numbers-first answer.
+
+### Pricing
+
+Snowflake charges in credits, not DBUs. A Medium warehouse
+(roughly comparable to Databricks Medium) consumes 4 credits/hour.
+
+sf_credits_hour = 4
+
+On-demand Standard Edition: $3.00/credit. Most production
+deployments use pre-purchased capacity at roughly $2.25/credit,
+but we use list price for an apples-to-apples comparison (source:
+[Snowflake pricing page](https://www.snowflake.com/en/data-cloud/pricing/)).
+
+sf_rate = $3.00
+
+### Auto-suspend behavior
+
+Snowflake's default auto-suspend is 10 minutes (configurable
+down to 1 minute, but Snowflake recommends 5–10 for interactive
+workloads to avoid frequent cold starts). Snowflake cold start
+for a Medium warehouse is typically 10–30 seconds — faster than
+Pro but slower than serverless. This puts warm hours somewhere
+between the two Databricks options:
+
+sf_warm_hours = 7
+
+### Monthly and annual
+
+sf_monthly = sf_rate * sf_credits_hour * sf_warm_hours * workdays
+sf_annual = sf_monthly * 12
+
+Snowflake at sf_monthly/month. Similar ballpark to Databricks
+serverless, which is not a coincidence — both vendors price to
+the same market.
+
+### The comparison is not just price
+
+Raw compute cost is a wash. The real differences are:
+
+**Snowflake advantages:**
+- Mature, polished SQL experience — the UI, autocomplete, and
+  result caching are excellent
+- Simpler concurrency scaling (multi-cluster warehouses just work)
+- Deeper ecosystem of SQL-first BI tools
+- Time-to-value for a pure SQL analytics team is lower
+
+**Databricks advantages:**
+- Unified platform — the same data that analysts query in DBSQL
+  is the data that engineers transform in Spark and data scientists
+  train models on. No copies, no sync, one governance layer.
+- Unity Catalog governs everything (tables, models, files, code)
+- Better price-performance for large-scale joins and complex
+  analytics (Photon + Delta Lake optimizations)
+- The ML/AI story is significantly stronger
+
+For a wind utility that needs SQL analytics AND predictive
+maintenance AND compliance governance, Databricks is the stronger
+platform play. For a team that only needs SQL analytics, Snowflake
+is genuinely easier to adopt.
+
+---
+
+## Section 5: The Monday Morning Spike
+
+At 8am Monday, 15 analysts open dashboards simultaneously. The
+Medium warehouse — comfortable with 8–10 concurrent queries —
+gets 15 at once, several of them complex.
+
+### Auto-scaling to Large
+
+Serverless warehouses auto-scale. During the spike, Databricks
+spins up a Large warehouse (16 DBUs/hour) to handle the burst.
+After the meeting ends around 10am, it scales back to Medium.
+
+The INCREMENTAL cost of the spike is the difference between
+Large and Medium for those 2 hours:
+
+spike_hours = 2
+large_dbus = 16
+spike_additional_dbus = large_dbus - medium_dbus
+
+spike_monthly = serverless_rate * spike_additional_dbus * spike_hours * workdays
+
+### Total with spike
+
+total_with_spike_monthly = serverless_monthly + spike_monthly
+total_with_spike_annual = total_with_spike_monthly * 12
+
+The Monday spike adds spike_monthly/month — about a 15% bump.
+This is a common pattern: predictable spikes that auto-scaling
+handles cleanly. Without auto-scaling (on a fixed Pro warehouse),
+you would either over-provision all day or accept slow dashboards
+during the meeting. Neither is good.
+
+---
+
+## Section 6: What If You Double the Team?
+
+The utility acquires another operator. Now 30 analysts need access.
+Peak concurrency doubles. You need a Large warehouse as the
+baseline instead of Medium.
+
+scaled_analysts = 30
+scaled_dbus = large_dbus
+scaled_warm_hours = warm_hours_per_day
+
+scaled_monthly = serverless_rate * scaled_dbus * scaled_warm_hours * workdays
+scaled_annual = scaled_monthly * 12
+
+Doubling the team doubles the cost to scaled_monthly/month. This
+is linear scaling — no economies of scale on compute. The savings
+come from NOT duplicating the data platform: one set of Gold
+tables, one governance layer, one set of pipelines. The marginal
+cost of the 16th analyst is a larger warehouse. The marginal cost
+of building a second data platform would be everything in Module 1
+all over again.
+
+---
+
+## Section 7: Optimization Levers
+
+These numbers assume no optimization. In practice, several things
+bring the cost down significantly:
+
+### Result caching (free)
+
+Repeated dashboard queries — the ones 15 analysts run every
+Monday morning — hit Databricks' result cache. If the underlying
+data has not changed, the cached result returns instantly with
+zero DBU consumption. For a fleet status dashboard that refreshes
+every 60 seconds but the Gold table only updates hourly, 59 out
+of 60 refreshes are free.
+
+Estimated savings: 20–40% of dashboard query cost during peak
+hours.
+
+### Liquid clustering (fewer DBUs per query)
+
+A Gold table clustered on `(turbine_id, reading_hour)` means a
+query filtering to one turbine scans a fraction of the files.
+Fewer files scanned = less compute = fewer DBUs. This is the
+single most impactful optimization for query cost on large tables.
+
+Estimated savings: 30–60% reduction in scan-heavy query DBU
+consumption, depending on filter selectivity.
+
+### Query tagging and monitoring
+
+Tag queries by team or dashboard using `SET spark.databricks.queryTag`.
+Use the Query History tab to identify the 5 most expensive queries
+and optimize them first. Often a single bad query (a full table
+scan that should have a filter, a CROSS JOIN that should be an
+INNER JOIN) accounts for 20% of total DBU spend.
+
+### Warehouse scheduling
+
+Auto-stop the warehouse outside business hours and on weekends.
+Serverless does this naturally (suspends in seconds), but Pro
+warehouses should have explicit schedules to avoid paying for
+overnight idle time. This is table-stakes configuration that
+teams forget to set up.
+
+### Optimized cost estimate
+
+If you apply conservative optimization (25% reduction from
+caching and clustering combined):
+
+optimization_factor = 0.75
+optimized_serverless_monthly = total_with_spike_monthly * optimization_factor
+optimized_serverless_annual = optimized_serverless_monthly * 12
+
+With basic optimization: optimized_serverless_monthly/month. Not
+a dramatic reduction, but compounded over a year it is real money.
+
+---
+
+## Summary: All Scenarios
+
+| Scenario | Monthly | Annual | Notes |
+|----------|---------|--------|-------|
+| Serverless Medium (baseline) | {{serverless_monthly}} | {{serverless_annual}} | 6 warm hrs/day, 22 workdays |
+| Serverless + Monday spike | {{total_with_spike_monthly}} | {{total_with_spike_annual}} | +2 hrs Large on Mondays |
+| Serverless optimized | {{optimized_serverless_monthly}} | {{optimized_serverless_annual}} | 25% reduction from caching/clustering |
+| Pro Medium | {{pro_monthly}} | {{pro_annual}} | 8 warm hrs (longer idle) |
+| Snowflake Medium | {{sf_monthly}} | {{sf_annual}} | $3/credit list price |
+| Serverless Large (30 analysts) | {{scaled_monthly}} | {{scaled_annual}} | Doubled team |
+
+### Try it yourself
+
+Change `warm_hours_per_day = 3` and rerun — that is a team that
+checks dashboards twice a day. Change `sf_rate = $2.25` to model
+Snowflake pre-purchased capacity. Change `analysts = 50` and see
+what happens to the spike.
+
+The point is not to memorize these numbers. The point is to have
+a framework for answering "what will this cost?" when a customer
+asks — and to know which assumptions matter most.

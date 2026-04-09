@@ -209,6 +209,27 @@ If you're working with an existing Databricks customer, there's a practical deta
 
 The migration path is straightforward — models are re-registered in Unity Catalog and serving endpoints are updated to point to the new URIs — but it's operational work that someone has to plan and execute. Knowing this migration is happening is useful consulting knowledge.
 
+## From registry to serving
+
+Registering a model in Unity Catalog doesn't deploy it. To serve the vibration model in real-time:
+
+1. **Create a serving endpoint** (Databricks UI --> Serving --> Create). Select the registered model and version. Choose compute size (CPU for simple models, GPU for deep learning). Enable auto-scaling if query volume varies.
+
+2. **Test the endpoint** -- Send a sample payload via REST API:
+```python
+import requests
+response = requests.post(
+    'https://<workspace>.databricks.net/serving-endpoints/vibration-model/invocations',
+    headers={'Authorization': f'Bearer {token}'},
+    json={'dataframe_records': [{'rms_vibration': 4.2, 'temperature': 68.5}]}
+)
+print(response.json())  # {'predictions': [0.87]}
+```
+
+3. **Monitor in production** -- Use Lakehouse Monitoring (or Inference Tables) to track prediction distributions over time. If the distribution shifts (mean prediction changes, or the model starts predicting failure 3x more often than baseline), investigate for drift.
+
+The cost: a single-model CPU endpoint starts at ~$0.07/hour (~$50/month). GPU endpoints are ~10x more. For the wind utility's vibration model (predicting once per turbine per hour = 500 predictions/hour), a small CPU endpoint is sufficient[^6].
+
 ## What this solves for the vibration model
 
 Go back to the four failures from the previous lecture:
@@ -231,5 +252,7 @@ The vibration model with MLflow tracking would have been deployed with a clear v
 [^3]: Databricks. "Model Registry improvements with MLflow 3." https://docs.databricks.com/aws/en/mlflow/model-registry-3 — The default registry URI in MLflow 3 is `databricks-uc`, meaning the Unity Catalog model registry is used by default.
 
 [^4]: MLflow. "ML Model Registry." https://mlflow.org/docs/latest/ml/model-registry/ — Registered model versions capture metrics and parameters directly, making them available across all workspaces.
+
+[^6]: Databricks. "Model Serving pricing." https://docs.databricks.com/aws/en/machine-learning/model-serving/ -- Serverless model serving pricing varies by compute size; CPU endpoints start at fractional DBU rates per hour.
 
 [^5]: Databricks. "Manage model lifecycle using the Workspace Model Registry (legacy)." https://docs.databricks.com/aws/en/machine-learning/manage-model-lifecycle/workspace-model-registry — Since April 2024, Workspace Model Registry is disabled for new workspaces with Unity Catalog as the default catalog.
