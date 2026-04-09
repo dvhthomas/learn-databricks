@@ -5,8 +5,13 @@
 </head>
 <body>
   {{ partial "nav.html" . }}
+  <input type="checkbox" id="sidebar-toggle" class="sidebar-toggle" aria-hidden="true">
   <div class="layout">
-    {{ partial "sidebar.html" . }}
+    <label for="sidebar-toggle" class="sidebar-open-btn" aria-label="Open navigation">&#9776;</label>
+    <div class="sidebar-overlay">
+      <label for="sidebar-toggle" class="sidebar-overlay-bg" aria-label="Close navigation"></label>
+      {{ partial "sidebar.html" . }}
+    </div>
     <main>
       {{ block "main" . }}{{ end }}
     </main>

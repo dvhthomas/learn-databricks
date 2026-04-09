@@ -249,17 +249,116 @@ footer {
   font-size: 0.85rem;
 }
 
-/* Responsive: collapse sidebar on small screens */
+/* Sidebar toggle (hidden checkbox) */
+.sidebar-toggle { display: none; }
+.sidebar-open-btn { display: none; }
+.sidebar-overlay-bg { display: none; }
+
+/* Desktop: sidebar overlay wrapper is transparent, sidebar just shows */
+.sidebar-overlay { display: contents; }
+
+/* Responsive: off-canvas drawer on small screens */
 @media (max-width: 768px) {
-  .layout { flex-direction: column; }
-  .sidebar {
-    width: 100%;
-    position: static;
-    max-height: none;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding-right: 0;
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
+  /* Hamburger button */
+  .sidebar-open-btn {
+    display: block;
+    position: fixed;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 1001;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+    font-size: 1.3rem;
+    cursor: pointer;
+    line-height: 1;
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
+
+  /* Overlay wrapper — covers screen when open */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1000;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  /* Semi-transparent backdrop */
+  .sidebar-overlay-bg {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.3);
+    opacity: 0;
+    transition: opacity 0.2s;
+    cursor: default;
+  }
+
+  /* Sidebar slides in from left */
+  .sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 18rem;
+    max-width: 80vw;
+    height: 100%;
+    max-height: 100%;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    padding: 1.5rem 1rem;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    overflow-y: auto;
+    box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+  }
+
+  /* When checkbox is checked: open the drawer */
+  .sidebar-toggle:checked ~ .layout .sidebar-overlay {
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .sidebar-toggle:checked ~ .layout .sidebar-overlay-bg {
+    opacity: 1;
+  }
+
+  .sidebar-toggle:checked ~ .layout .sidebar {
+    transform: translateX(0);
+  }
+
+  /* Hide hamburger when drawer is open */
+  .sidebar-toggle:checked ~ .layout .sidebar-open-btn {
+    display: none;
+  }
+}
+
+/* Heading anchor links */
+.heading-anchor {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: normal;
+  opacity: 0;
+  margin-left: 0.3em;
+  transition: opacity 0.15s;
+}
+
+h1:hover .heading-anchor,
+h2:hover .heading-anchor,
+h3:hover .heading-anchor,
+h4:hover .heading-anchor {
+  opacity: 1;
+}
+
+.heading-anchor:hover {
+  color: var(--link);
 }

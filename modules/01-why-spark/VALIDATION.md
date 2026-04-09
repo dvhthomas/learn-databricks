@@ -12,35 +12,44 @@ to show you understand it, not a lecture.
 
 **Must know cold:**
 
-1. What is a shuffle in Spark, and why is it expensive? Give a concrete example
-   using sensor data.
+1. Your wind utility has sensor-analytics running on one machine. Walk me
+   through the first 3 things that would break as you scale to 500 turbines —
+   and for each one, what production component replaces the toy version.
 
-2. I have 500GB of sensor data and I want the average temperature per sensor per
-   hour. Walk me through what Spark does when I run `groupBy("sensor_id").agg(avg("value"))`.
-   Where does the shuffle happen?
+2. What is a shuffle in Spark, and why is it expensive? Give a concrete example
+   using the wind utility scenario (e.g., joining SCADA data with weather data).
 
-3. What's the difference between a Spark transformation and an action? Why does
+3. I have 3 years of SCADA data and I want the average gearbox temperature per
+   turbine per month. Walk me through what Spark does when I run
+   `groupBy("turbine_id", "month").agg(avg("value"))`. Where does the shuffle
+   happen?
+
+4. What's the difference between a Spark transformation and an action? Why does
    this distinction matter when debugging a slow job?
 
-4. Why does Databricks exist? If Apache Spark is open source and free, what are
+5. Why does Databricks exist? If Apache Spark is open source and free, what are
    customers paying for?
 
-5. I'm a data engineer at a company with 50GB of data growing by 1GB/month. Should
-   I use Spark or DuckDB? Justify your answer.
+6. A data scientist says "just use DuckDB." Your wind utility has 15 analysts,
+   NERC compliance requirements, and a predictive maintenance ML model. What do
+   you say?
 
 **Know the shape:**
 
-6. What is Photon and how does it relate to Spark? (One sentence is fine.)
+7. What is Photon and how does it relate to Spark? What's a "vectorized
+   shuffle"? (Two sentences is fine.)
 
-7. What's the difference between Spark's DataFrame API and the RDD API? Which
-   should you use today?
+8. What is Spark Connect and why was it introduced in Spark 4.0? (One sentence.)
+
+9. What role does Kafka play in a production IoT data platform? How does it
+   differ from what Redis does in sensor-analytics?
 
 ---
 
 ## Code challenge
 
-Upload `exercises/01_spark_vs_duckdb.ipynb` to Databricks Community Edition and
-run it. You should be able to:
+Upload `exercises/01_spark_vs_duckdb.py` to Databricks Community Edition and
+run it as a notebook. You should be able to:
 
 - [ ] Explain what each cell is doing before running it
 - [ ] Find the shuffle stage in the Spark UI after running the `groupBy`
@@ -58,7 +67,8 @@ Practice this answer until it's fluent (under 90 seconds):
 
 A good answer covers: data is partitioned across executors → transformations are
 lazy → the `groupBy` triggers a shuffle → data is repartitioned by key → aggregation
-runs locally on each executor → results are collected.
+runs locally on each executor → results are collected. Bonus: mention AQE dynamically
+adjusting partition sizes and join strategies.
 
 ---
 
@@ -67,4 +77,4 @@ runs locally on each executor → results are collected.
 - [ ] All oral questions answered without significant prompting
 - [ ] Code challenge complete and explained
 - [ ] Interview question answer is fluent and under 90 seconds
-- [ ] Module status updated to `done` in repo README
+- [ ] Module status updated to `done` in `_index.md` front matter

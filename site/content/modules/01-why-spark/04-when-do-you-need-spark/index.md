@@ -1,143 +1,188 @@
 ---
 title: "When do you actually need Spark — and when don't you?"
-summary: "The honest comparison with DuckDB and other single-node tools, and where Databricks fits in the picture"
+summary: "The honest assessment: your wind utility's SCADA data doesn't need Spark. But the platform might. Here's how to decide."
 weight: 4
 type: lecture
 tags:
   - spark-vs-duckdb
   - databricks
   - when-to-use
+  - serverless
+  - ducklake
 sources:
   - https://duckdb.org/why_duckdb
+  - https://duckdb.org/2025/11/12/announcing-duckdb-142
   - https://www.databricks.com/product/databricks-sql
-  - https://www.databricks.com/blog/2022/04/11/introducing-photon-the-next-generation-query-engine-on-the-databricks-lakehouse-platform.html
-last_refreshed: ""
+  - https://docs.databricks.com/aws/en/compute/photon
+  - https://www.databricks.com/blog/introducing-data-intelligence-platform-energy
+  - https://motherduck.com/blog/making-pyspark-code-faster-with-duckdb/
+  - https://www.databricks.com/resources/demos/tutorials/lakehouse-platform/iot-and-predictive-maintenance
+last_refreshed: "2026-04-08"
 ---
 
 ## The question
 
-Your team processes 500GB of sensor data daily. An engineer suggests setting up a Spark cluster. Another says DuckDB on a single beefy machine would be simpler and faster. Who's right?
+Your wind utility generates a few GB/day of SCADA telemetry. That's comfortably within single-machine territory. A data scientist on the team says DuckDB on a beefy laptop would be simpler, cheaper, and faster for most queries. An architect says you need Databricks.
 
-This is a question you'll face constantly — as a practitioner making infrastructure decisions, or in a conversation with someone evaluating Databricks. The credible answer isn't "always use Spark." It's knowing where the crossover point is.
+Who's right? The honest answer: **both, for different parts of the problem.**
 
 ## The case for NOT using Spark
 
-Here's an uncomfortable truth that Databricks sales engineers won't lead with: for most datasets at most companies, a single machine is faster, cheaper, and simpler than a Spark cluster.
+Here's an uncomfortable truth that Databricks sales engineers won't lead with: for most individual queries against your wind turbine data, a single machine is faster, cheaper, and simpler.
 
 <div class="definition">
 <strong>DuckDB</strong>
-An embedded analytical database (like SQLite, but for analytics). It runs in a single process on a single machine, processes data in a columnar format, and is optimized for analytical queries on datasets that fit on one node. It requires zero infrastructure — no cluster, no configuration, no server.
+An embedded analytical database (like SQLite, but for analytics). It runs in a single process on a single machine, processes data in a columnar format, and is optimized for analytical queries on datasets that fit on one node. It requires zero infrastructure — no cluster, no configuration, no server[^1].
 </div>
 
-DuckDB (and similar tools like Polars) represents a different philosophy: instead of distributing the computation, make a single machine as efficient as possible.
+DuckDB has matured significantly. Version 1.0 shipped in June 2024 (stable storage format, no more breaking changes), and the 1.4 LTS release (October 2025) added database encryption, the MERGE statement, and Iceberg write support[^2]. DuckDB can now query Delta tables directly, and in benchmarks has processed 1 TB of Parquet data in approximately 30 seconds on a standard laptop[^3].
 
-Consider a concrete scenario: your sensor-analytics pipeline processes 1 million readings per day. That's roughly 100MB of Parquet data per day, or ~36GB per year. Let's run the same aggregation both ways:
+Let's run the numbers for the wind utility:
 
-**DuckDB:**
+**DuckDB on a single machine:**
 ```python
 import duckdb
 
 result = duckdb.sql("""
-    SELECT sensor_id, avg(value) as avg_reading
-    FROM read_parquet('sensors/*.parquet')
-    WHERE units = 'degrees_c'
-    GROUP BY sensor_id
-    ORDER BY avg_reading DESC
+    SELECT turbine_id, avg(value) as avg_temp
+    FROM read_parquet('scada/gearbox_temp/*.parquet')
+    WHERE signal = 'gearbox_temp'
+      AND timestamp >= '2024-01-01'
+    GROUP BY turbine_id
+    ORDER BY avg_temp DESC
 """).fetchdf()
 ```
 - Startup time: milliseconds
-- Query time on 36GB: ~10-30 seconds
+- Query time on 1 year of SCADA (~1 TB): ~30–60 seconds
 - Infrastructure: none
 - Cost: $0
 
-**PySpark:**
+**PySpark on Databricks:**
 ```python
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import avg, col
-
-spark = SparkSession.builder.getOrCreate()
 result = (
-    spark.read.parquet("sensors/")
-    .filter(col("units") == "degrees_c")
-    .groupBy("sensor_id")
-    .agg(avg("value").alias("avg_reading"))
-    .orderBy("avg_reading", ascending=False)
+    spark.read.parquet("scada/gearbox_temp/")
+    .filter(col("timestamp") >= "2024-01-01")
+    .groupBy("turbine_id")
+    .agg(avg("value").alias("avg_temp"))
+    .orderBy("avg_temp", ascending=False)
 )
 result.show()
 ```
-- Startup time: 30 seconds to several minutes (cluster must start)
-- Query time on 36GB: ~15-60 seconds (depends on cluster size)
-- Infrastructure: a Spark cluster (managed or self-hosted)
-- Cost: $2-10/hour for a small cluster on Databricks
+- Startup time: seconds (serverless) to minutes (classic cluster)
+- Query time on 1 year of SCADA: ~15–45 seconds
+- Infrastructure: serverless SQL warehouse or Spark cluster
+- Cost: $2–10+ per hour of compute
 
-For this workload, DuckDB wins on every dimension. It's faster (no startup overhead), simpler (no cluster), and free.
+For this query — one analyst, one table, one aggregation — DuckDB wins on every dimension. It's faster to start, simpler to operate, and free.
 
 ## Where the crossover happens
 
-So when does Spark actually become the right tool? There are three inflection points:
+So when does Spark (and the Databricks platform) actually earn its keep? There are five inflection points, and for the wind utility, it's not just about data volume.
 
-### Data volume beyond one machine
+### 1. Multi-source joins at scale
 
-Modern machines with 256GB-1TB of RAM can handle surprisingly large datasets. DuckDB can query datasets much larger than RAM by streaming from disk. But there's a practical ceiling around **1-5TB** for interactive queries on a single machine. Beyond that, you need to distribute.
+The data scientist wants to build a predictive maintenance model. She needs to join:
+- 3 years of SCADA gearbox temperature readings (billions of rows)
+- Hourly weather data from 12 stations (150K rows)
+- Maintenance work orders from SAP (50K rows)
+- Curtailment events from the grid operator (10K rows)
+- Component specifications from the asset registry (500 rows)
 
-A sensor network with 10,000 sensor types recording every second generates ~300GB/day — roughly 100TB/year. After two years, no single machine handles this well. This is where Spark earns its keep.
+DuckDB can probably handle this join on a single machine — it's compute-intensive but the total data is a few TB. The question is whether the *development experience* of expressing complex multi-source pipelines in DuckDB SQL is better or worse than using Spark DataFrames with a managed execution environment.
 
-### Concurrent access
+For a one-time analysis: DuckDB is fine. For a pipeline that runs nightly and feeds production dashboards: Spark on Databricks gives you scheduling, monitoring, lineage, and the ability for someone else on the team to understand and modify it 6 months later.
 
-This is the inflection point people underestimate. DuckDB runs in a single process. If 30 analysts all need to query the same dataset interactively, they can't share a DuckDB instance effectively.
+### 2. Concurrent access
 
-Spark (through Databricks SQL) can serve dozens or hundreds of concurrent users against the same data, with query isolation and resource management. For organizations with large analyst teams, this is often the deciding factor — not raw data volume.
+This is the inflection point most people underestimate. DuckDB runs in a single process. If 15 analysts all need to query the same dataset interactively, they can't share a DuckDB instance effectively.
 
-### Complex multi-step pipelines
+Databricks SQL provides **SQL warehouses** — dedicated compute endpoints that serve concurrent queries against the same governed data, with query isolation, result caching, and resource management. For the wind utility, this means:
 
-If your data processing is a single query, single-node tools are often sufficient. But production data platforms rarely involve just one query. They involve:
+- The fleet performance analyst runs a capacity factor report
+- A reliability engineer investigates a specific turbine's sensor history
+- The CFO's dashboard auto-refreshes every 15 minutes
 
-- Ingesting from multiple sources (APIs, files, streams)
-- Cleaning and validating at multiple stages
-- Joining across datasets
-- Feeding multiple downstream consumers (dashboards, ML models, reports)
+All three hit the same Gold tables through the same governance layer. This is the primary reason most organizations adopt Databricks SQL — not raw query speed, but shared, governed access.
 
-Spark's ability to express these pipelines in a single framework — with scheduling, monitoring, and lineage tracking through Databricks — becomes genuinely valuable at this complexity level.
+### 3. Streaming + batch in one framework
 
-## The honest comparison
+The wind utility needs both:
+- **Real-time:** Anomaly detection on incoming SCADA data (flag a gearbox temperature spike within minutes)
+- **Batch:** Nightly aggregations, monthly compliance reports, ML model retraining
 
-| | DuckDB / single-node | Spark / Databricks |
+Spark's Structured Streaming handles the real-time path using the same DataFrame API as batch. The same transformation logic, the same data quality rules, the same Delta tables. You don't need a separate streaming framework (like Flink) for the real-time path and a batch framework for the rest.
+
+DuckDB has no streaming story. You'd need a separate system for real-time processing.
+
+### 4. Governance and compliance
+
+This is the wind utility's dealbreaker. NERC CIP compliance requires:
+- Proving who has access to CEII data
+- Audit trails for all data access
+- Lineage from raw readings to compliance reports
+
+DuckDB has no governance layer. You could build access control around it with file permissions and wrapper scripts, but you'd be reimplementing what Unity Catalog provides out of the box — and you'd need to convince a NERC auditor that your custom solution is adequate.
+
+### 5. ML lifecycle management
+
+The data science team needs:
+- Experiment tracking (which model version, which features, which hyperparameters)
+- Model registry (which model is deployed to production)
+- Reproducibility (can you recreate last month's predictions)
+
+DuckDB doesn't address any of these. MLflow on Databricks integrates with the same governance layer — model access control, lineage from training data to deployed model, audit logs.
+
+## The honest comparison (2026 edition)
+
+| Dimension | DuckDB / single-node | Databricks platform |
 |---|---|---|
-| **Best for** | < ~1-5TB, small teams, simple pipelines | Multi-TB, many concurrent users, complex pipelines |
-| **Startup time** | Milliseconds | Minutes (cluster startup) |
-| **Complexity** | Low — one process, no infrastructure | High — cluster management, configuration tuning |
-| **Cost at small scale** | Free | $2-50/hour (cluster compute) |
-| **Cost at large scale** | Impossible (data doesn't fit) | Scales linearly with data and users |
-| **Concurrency** | Limited (single process) | High (shared cluster, query isolation) |
-| **Ecosystem** | Standalone tool | Part of a full platform (governance, ML, BI) |
+| **Single-analyst queries** | Faster, simpler, free | Slower to start, costs money |
+| **Multi-TB joins** | Possible up to ~1–5 TB | Scales linearly with data |
+| **Concurrent users** | Limited (single process) | Built for it (SQL warehouses) |
+| **Streaming** | No | Structured Streaming + batch unified |
+| **Governance** | None | Unity Catalog (access, lineage, audit) |
+| **ML lifecycle** | None | MLflow (experiments, registry, serving) |
+| **Startup time** | Milliseconds | Seconds (serverless) to minutes (classic) |
+| **Cost at small scale** | Free | $2–50/hour |
+| **Operational complexity** | None | Managed, but still a platform to learn |
 
-The honest summary: **DuckDB is better for small-to-medium datasets with small teams. Spark is better for large datasets, many concurrent users, or complex multi-step pipelines. The crossover point is higher than most people think.**
+**DuckLake** (May 2025) is worth noting: DuckDB's own ACID lakehouse format with time-travel, MERGE, and Iceberg interoperability. This narrows the gap between DuckDB and a lakehouse platform for single-user or small-team scenarios. But DuckLake doesn't provide governance, concurrent access, or streaming — the problems that drive enterprise platform adoption[^4].
 
-## Where Databricks fits
+## The wind utility decision matrix
 
-Spark is an open-source engine. You can run it yourself on AWS EMR, Google Dataproc, or your own machines. So why do companies pay Databricks?
+For the wind utility, the practical split looks like this:
 
-<div class="definition">
-<strong>Databricks</strong>
-A managed platform built around Apache Spark. It adds cluster management, collaborative notebooks, a job scheduler, Delta Lake for storage, Unity Catalog for governance, and Databricks SQL for analyst-facing queries. The pitch: you get Spark's power without Spark's operational pain.
-</div>
+```mermaid
+graph TD
+    Q1{"Who is using the data?"}
+    Q1 -->|One data scientist, ad hoc analysis| A1["DuckDB on a laptop<br/>Simple, fast, free"]
+    Q1 -->|Multiple analysts + dashboards| Q2{"Do you need governance?"}
+    Q2 -->|No regulatory requirements| A2["DuckDB + shared storage<br/>Maybe MotherDuck for hosted"]
+    Q2 -->|NERC/FERC compliance needed| Q3{"Do you also need ML?"}
+    Q3 -->|Data engineering + analytics only| A3["Databricks SQL + Unity Catalog"]
+    Q3 -->|Full platform: pipelines + ML + analytics| A4["Full Databricks platform<br/>Spark + Delta + UC + DBSQL + MLflow"]
+```
 
-What Databricks adds on top of open-source Spark:
+The wind utility lands at the bottom right — not because of data volume, but because of governance requirements (NERC), concurrent analyst access (15+ users), streaming needs (real-time anomaly detection), and ML lifecycle management (predictive maintenance models).
 
-**You don't manage clusters.** Starting, sizing, autoscaling, and terminating clusters is handled for you. On open-source Spark, cluster management is a full-time job (literally — many companies have a "Spark platform team").
-
-**Photon.** Databricks' native C++ execution engine that replaces parts of the JVM-based Spark engine. For SQL-heavy workloads, Photon can be 2-8x faster than open-source Spark. This is a genuine competitive advantage, not marketing.
-
-**Collaborative notebooks.** Multi-language notebooks (Python, SQL, Scala, R) with version control, shared state, and scheduled execution. This is where data engineers and data scientists do their daily work.
-
-**The rest of the platform.** Delta Lake (Module 2), Unity Catalog (Module 5), Databricks SQL (Module 6), MLflow (Module 7) — Spark is the engine, but the platform around it is what enterprise buyers actually care about.
+A startup with 10 turbines, 2 engineers, and no regulatory requirements? DuckDB on a laptop, all day long.
 
 ## The question you need to answer fluently
 
-If someone asks "why not just use DuckDB?" or "when do you actually need Spark?", here's the shape of a good answer:
+If someone asks "why not just use DuckDB?" or "when do you actually need Databricks?", here's the shape of a good answer:
 
-> "DuckDB is the right tool when your data fits on one machine and your team is small. It's faster to start, simpler to operate, and genuinely better for that use case. Spark becomes the right tool when you cross one of three thresholds: data that exceeds what one machine can handle, enough concurrent users that you need a shared query engine, or pipeline complexity that benefits from a unified platform. Databricks makes Spark operational by managing the infrastructure and wrapping it with governance, SQL analytics, and ML tooling."
+> "DuckDB is genuinely better for individual queries against small-to-medium datasets — it's faster to start, simpler, and free. For a single data scientist exploring a year of turbine data, DuckDB is the right tool. Databricks earns its keep when you need concurrent access for a team of analysts, governance for regulatory compliance, streaming for real-time monitoring, or ML lifecycle management. For a regulated utility with 15 analysts, NERC requirements, and a predictive maintenance program, the platform justifies itself through governance and collaboration — not raw query speed."
 
-That's an answer that builds trust because it's honest about when Spark ISN'T the right tool. Knowing the boundaries of a technology is more credible than being an unconditional advocate.
+That answer builds trust because it's honest about when Spark ISN'T the right tool. Knowing the boundaries of a technology is more credible than being an unconditional advocate.
 
-**Key takeaway: Spark isn't always better than single-node tools. DuckDB beats Spark for small-to-medium data with small teams. Spark earns its keep at the intersection of large data, many concurrent users, and complex pipelines. Databricks earns its keep by making Spark operational and wrapping it with a full data platform. Knowing where these crossover points are is more valuable than being a Spark evangelist.**
+**Key takeaway: Your wind utility's SCADA data alone doesn't need Spark — DuckDB handles it fine. What drives platform adoption is the combination of concurrent analyst access, regulatory governance, streaming + batch in one framework, and ML lifecycle management. The decision isn't "Spark vs. DuckDB" — it's "do I need a platform or a tool?" For a regulated utility with multiple teams, the answer is platform.**
+
+---
+
+[^1]: DuckDB. "Why DuckDB?" https://duckdb.org/why_duckdb
+
+[^2]: DuckDB. "Announcing DuckDB 1.4.2 LTS." November 2025. DuckDB 1.4.0 added database encryption with AES-256-GCM, the MERGE statement, and Iceberg write support. https://duckdb.org/2025/11/12/announcing-duckdb-142
+
+[^3]: MotherDuck. "Making PySpark Code Faster with DuckDB." Benchmarks showed DuckDB processing 1 TB of Parquet data in approximately 30 seconds on commodity hardware. https://motherduck.com/blog/making-pyspark-code-faster-with-duckdb/
+
+[^4]: DuckDB. "DuckLake." May 2025. A full ACID-compliant lakehouse format with time-travel queries, MERGE support, and Iceberg interoperability — but designed for single-user or small-team use, not enterprise governance.

@@ -1,0 +1,491 @@
+---
+title: "Wind Utility Data Platform: Sizing & Cost Model"
+description: >
+  How much data does a 500-turbine wind utility generate?
+  What does it really cost on Databricks — and is that justified?
+  Tweak the assumptions and rerun: cm eval wind-utility-sizing.cm -v
+---
+
+# Wind Utility Data Platform: Sizing & Cost Model
+
+You built sensor-analytics on a laptop. Now scale it to 500 wind
+turbines across 3 states. How much data, how much infrastructure,
+how much money — and is Databricks the right call?
+
+## The bottom line
+
+| | Annual |
+|---|---|
+| **Databricks platform (infra only)** | **about $60K** |
+| + Platform team (2 data engineers) | about $320K |
+| **Total with people** | **about $380K** |
+| **DIY alternative** (cloud VM + 5 SaaS tools + glue engineer) | **about $292K** |
+| **Risk without a platform** (missed failures + false alarms + regulatory fines) | **about $2.5M** |
+
+The Databricks platform costs about $60K/year in infrastructure
+— roughly 2% of the $2.5M risk it mitigates. With people, it's
+about $380K — a real cost that needs justification. The DIY
+alternative is cheaper (about $292K) but stitches together 5
+separate tools with no shared governance or lineage.
+
+**NERC** (North American Electric Reliability Corporation) is the
+federal regulator that enforces cybersecurity and reliability
+standards for the US power grid. Wind utilities above a certain
+size must comply with NERC CIP (Critical Infrastructure
+Protection) rules — including proving who has access to sensitive
+grid data. Violations carry fines up to $1.54M/day. This is a
+major driver of the platform decision.
+
+For a smaller operator (50 turbines, 3 analysts, no NERC
+compliance requirements), DuckDB + dbt on a single server is
+the right answer.
+
+**The rest of this document shows how we arrived at these numbers.**
+Every assumption is explained and sourced. If you disagree with
+a number, change it and rerun — that's the point.
+
+---
+
+## Part 1: How Much Data?
+
+### SCADA telemetry
+
+A wind turbine SCADA system monitors 60–100 signals: nacelle
+temperature, gearbox vibration, rotor speed, pitch angle, wind
+speed/direction, oil pressure, generator temp, power output,
+etc. (source: [Pandit et al. 2023](https://journals.sagepub.com/doi/10.1177/0309524X221124031),
+reports 60–100 SCADA signals per turbine). We use 100 as a round
+number that captures the full sensor suite including derived signals.
+
+turbines = 500
+signals_per_turbine = 100
+
+SCADA systems typically poll every 10 minutes (6×/hour × 24 hours
+= 144 intervals/day). Some systems poll faster (1–5 min) for
+critical signals, but 10 min is the industry standard for routine
+condition monitoring (same source — standard SCADA resolution
+is 5–10 minutes).
+
+intervals_per_day = 144
+readings_per_day = turbines * signals_per_turbine * intervals_per_day
+
+Each reading contains: sensor_id (16 bytes), turbine_id (16 bytes),
+timestamp (8 bytes), value (8 bytes as float64), units (8 bytes),
+quality_flag (4 bytes), plus overhead. ~100 bytes per row is
+typical for columnar IoT schemas.
+
+bytes_per_reading = 100 bytes
+raw_daily = readings_per_day * bytes_per_reading
+
+As a daily ingest rate, accumulated over a year:
+
+daily_ingest = raw_daily/day
+raw_annual = daily_ingest over 1 year
+
+Parquet stores data in columns, so a column of 7.2M identical
+"degrees_c" strings compresses to nearly nothing. Repetitive
+sensor data (many sensors reporting similar ranges) compresses
+well. 5–10× is typical for columnar formats on IoT data; we
+use 8× as a conservative middle.
+
+compression_ratio = 8
+parquet_daily = raw_daily / compression_ratio
+parquet_annual = raw_annual / compression_ratio
+
+### Other data sources
+
+**Weather:** Regional utilities contract weather data from services
+like DTN or Vaisala. 12 stations is typical for a 3-state footprint
+(~4 per state). Each station reports ~50 variables (temperature,
+humidity, wind at multiple heights, barometric pressure, solar
+irradiance, precipitation, etc.) hourly:
+
+weather_daily = 12 * 50 * 24 * 100 bytes / compression_ratio
+weather_annual = weather_daily/day over 1 year
+
+**Vibration (CMS):** Condition Monitoring Systems use accelerometers
+on bearings, gearboxes, and generators to detect mechanical wear
+before it becomes catastrophic (see [DOE gearbox failure research](https://www.energy.gov/eere/wind/articles/zeroing-no-1-cause-wind-turbine-gearbox-failures)). Unlike SCADA's 10-minute
+polling, CMS captures high-frequency "bursts" — typically 25 kHz
+(25,000 samples/second) for 10 seconds. That produces 250,000 data
+points per burst. Each sample is a 4-byte float (acceleration
+amplitude). Bursts happen on a schedule (weekly per turbine is
+common) or when triggered by anomaly thresholds:
+
+burst_bytes = 250000 * 4 bytes
+vibration_weekly = turbines * burst_bytes / compression_ratio
+vibration_annual = vibration_weekly/week over 1 year
+
+**Maintenance records:** Work orders from SAP, Maximo, or similar
+CMMS (Computerized Maintenance Management System). A 500-turbine
+fleet generates roughly 10 work orders per turbine per year
+(scheduled inspections, corrective maintenance, blade repairs).
+Each work order is ~2 KB of structured data:
+
+maintenance_annual = 5000 * 2 KB
+
+total_annual_data = parquet_annual + weather_annual + vibration_annual + maintenance_annual
+
+### 3-year total with processing copies
+
+In practice you don't store just one copy of your data. A
+production pipeline keeps:
+- **Raw data** (everything as received, never modified — for
+  recovery, auditing, and reprocessing)
+- **Cleaned data** (bad readings removed, types validated,
+  duplicates dropped — ~80% of raw survives cleaning)
+- **Aggregated summaries** (hourly/daily averages that analysts
+  actually query — ~30% the size of cleaned data)
+
+That's roughly raw (1×) + cleaned (0.8×) + aggregated (0.3×) =
+2.1× the raw volume. You'll learn exactly why in Module 3
+(Medallion Architecture):
+
+copy_factor = 2.1
+total_3yr_storage = total_annual_data * 3 * copy_factor
+
+**Verdict:** total_3yr_storage as napkin. Fits on a single server.
+
+### How fast can DuckDB scan it?
+
+duckdb_scan = read(total_3yr_storage, ssd)
+
+Full table scan in duckdb_scan. This is NOT a big data problem.
+
+### Ingestion throughput
+
+scada_throughput = daily_ingest
+scada_throughput per second
+scada_throughput per minute
+
+A 10-gig network link handles throughput(ten_gig). Our SCADA
+stream is a rounding error — the network is not the bottleneck.
+
+---
+
+## Part 2: Data Growth
+
+Wind operators grow through acquisitions and new site
+construction. US wind capacity has grown ~10% annually over the
+past decade (source: ACP/AWEA annual market reports). Applying
+that to our fleet's storage:
+
+yr1_storage = total_annual_data * copy_factor
+yr3_storage = compound yr1_storage by 10% over 3 years
+yr5_storage = compound yr1_storage by 10% over 5 years
+
+---
+
+## Part 3: Databricks Platform Costs
+
+This is what the platform ACTUALLY costs — not just Databricks
+DBU charges, but the full cloud bill.
+
+### Cloud storage (S3/ADLS)
+
+AWS S3 Standard: $0.023/GB/month in us-east-1
+([AWS S3 pricing](https://aws.amazon.com/s3/pricing/)).
+Azure ADLS and GCP are comparable:
+
+storage_gb = number(total_3yr_storage) / 1073741824
+storage_rate = ($0.023 * storage_gb) / month
+storage_annual = storage_rate over 1 year
+
+### How Databricks pricing works
+
+Databricks charges in **DBUs (Databricks Units)** — an abstract
+compute credit. A bigger cluster burns more DBUs per hour. The
+price per DBU varies by workload type AND by contract tier.
+
+**Important:** Each workload type has its own published DBU rate.
+Here are the AWS Premium tier list prices (source:
+[Mammoth Analytics pricing guide](https://mammoth.io/blog/databricks-pricing-2/)):
+
+- **Jobs Compute:** $0.15/DBU — cheapest, for scheduled batch work
+- **All-Purpose Compute:** $0.40/DBU — interactive notebooks
+- **SQL Serverless:** $0.70/DBU — analyst SQL warehouses
+- **SQL Classic:** $0.22/DBU — self-managed SQL warehouses
+
+Premium is now the base tier on AWS and GCP (Standard was retired
+Oct 2025). Enterprise adds ~15–25% to these rates but is not
+publicly listed — it's a negotiated contract. We use Premium rates
+as a conservative baseline. (Enterprise pricing is negotiated;
+[CloudZero](https://www.cloudzero.com/blog/databricks-pricing/)
+reports about $0.65/DBU for All-Purpose on Enterprise.)
+
+### Compute: SQL Warehouse for 15 analysts
+
+A SQL warehouse is a dedicated compute endpoint for SQL queries.
+"Serverless" means Databricks manages the VMs — starts in seconds,
+scales to zero when idle. You pay only while queries run.
+
+Warehouse sizes are predefined (2X-Small through 4X-Large). A
+"Medium" is appropriate for 15 concurrent analysts. It consumes
+16 DBUs for each hour it's active. Serverless SQL is the most
+expensive workload type at $0.70/DBU.
+
+Not all 15 analysts query 8 hours/day. Realistic active compute
+time — where the warehouse is actually processing, not idle
+between queries — is ~6 hours of warehouse time per workday:
+
+sql_dbu_rate = $0.70
+sql_dbus_per_hour = 16
+analyst_active_hours = 6
+workdays_per_month = 22
+sql_monthly = sql_dbu_rate * sql_dbus_per_hour * analyst_active_hours * workdays_per_month
+sql_annual = sql_monthly * 12
+
+### Compute: ETL pipeline jobs
+
+ETL (Extract, Transform, Load) processes raw SCADA data into
+cleaned, aggregated tables. It runs on a "Jobs" cluster —
+non-interactive, optimized for scheduled work. Jobs Compute at
+$0.15/DBU is the cheapest workload type.
+
+Our wind utility runs a nightly batch pipeline (~1 hour) plus
+hourly micro-batch streaming (~15 min each). Total effective
+compute: ~4 hours/day. A small Jobs cluster (2–4 workers)
+consumes about 10 DBUs/hour:
+
+jobs_dbu_rate = $0.15
+etl_dbus_per_hour = 10
+etl_hours_per_day = 4
+etl_daily = jobs_dbu_rate * etl_dbus_per_hour * etl_hours_per_day
+etl_monthly = etl_daily * 30
+etl_annual = etl_monthly * 12
+
+### Compute: ML training & serving
+
+**Training:** Retrain the vibration/bearing-failure model weekly
+on historical data. Needs a GPU cluster (1–2 NVIDIA A10G or T4
+instances), ~8 hours per session. Uses All-Purpose Compute at
+$0.40/DBU because data scientists need interactive access during
+model development. 24 DBUs/hour for a GPU-equipped cluster:
+
+ml_train_rate = $0.40
+ml_training_dbus_hour = 24
+ml_training_hours_week = 8
+ml_training_weekly = ml_train_rate * ml_training_dbus_hour * ml_training_hours_week
+ml_training_monthly = ml_training_weekly * 4
+
+**Serving:** A REST endpoint scoring incoming SCADA readings
+against the trained model 24/7. Returns risk scores like "this
+bearing has a 73% chance of failure in 48 hours." Minimal
+compute — 4 DBUs/hour for a small Model Serving endpoint at
+roughly All-Purpose rates:
+
+ml_serve_rate = $0.40
+ml_serving_dbus_hour = 4
+ml_serving_daily = ml_serve_rate * ml_serving_dbus_hour * 24
+ml_serving_monthly = ml_serving_daily * 30
+
+ml_monthly = ml_training_monthly + ml_serving_monthly
+ml_annual = ml_monthly * 12
+
+### Cloud VMs & networking
+
+Databricks DBU charges are NOT the whole bill. Databricks runs
+on YOUR cloud account — clusters spin up EC2/Azure VMs, attach
+disks, use networking. Those charges appear on your AWS/Azure/GCP
+bill separately.
+
+The ratio varies by workload (GPU instances cost more, serverless
+SQL has lower VM overhead), but cloud infra typically adds 40–60%
+on top of DBU spend (source:
+[Dawiso](https://www.dawiso.com/glossary/databricks-pricing-explained-real-cost-breakdown-for-2025)
+reports 50–200% of DBU charges). We use 50%:
+
+dbu_annual = sql_annual + etl_annual + ml_annual
+cloud_infra_annual = 50% of dbu_annual
+
+### Databricks support
+
+Enterprise support: 24/7 availability, 1-hour response SLA for
+critical issues. Typically 10% of annual DBU spend (per standard
+enterprise agreements — this is not publicly documented but is
+widely reported in vendor comparison guides — Mammoth, CloudZero,
+DoiT all cite 10%):
+
+support_annual = 10% of dbu_annual
+
+### Platform team
+
+Two data engineers to maintain the platform: writing pipelines,
+managing DLT jobs, responding to data quality alerts, handling
+Unity Catalog permissions, fielding analyst requests. $160K/year
+is a mid-range fully-loaded cost (salary + benefits + taxes) for
+a US data engineer (BLS + Levels.fyi, $140K–$180K range):
+
+platform_team_annual = $160K * 2
+
+### Total Databricks costs
+
+infra_annual = storage_annual + dbu_annual + cloud_infra_annual + support_annual
+total_with_people = infra_annual + platform_team_annual
+
+### Monthly run rates
+
+infra_monthly = infra_annual / 12
+total_monthly = total_with_people / 12
+
+---
+
+## Part 4: The DIY Alternative
+
+What if you skip Databricks and build with open-source tools on
+your own infrastructure?
+
+### Compute server
+
+A utility this size would run analytics on a dedicated server in
+their data center or a cloud VM — not individual laptops. A
+beefy analytics server (64-core, 512GB RAM, NVMe storage) costs
+about $30K and lasts 4 years. Or a comparable cloud VM (e.g.,
+r6i.16xlarge on AWS at about $3/hour on-demand) runs about
+$3K/month:
+
+onprem_server = $30000
+onprem_annual = onprem_server / 4
+
+Or as a cloud VM:
+
+cloud_vm_monthly = $3000
+cloud_vm_annual = cloud_vm_monthly * 12
+
+We'll use the cloud VM since it's more comparable to Databricks
+(both are cloud-hosted, similar availability):
+
+diy_compute = cloud_vm_annual
+
+### Platform tools
+
+DuckDB is free, but it's a query engine, not a platform. To
+match Databricks' capabilities you need separate tools:
+
+- **Confluent Cloud** (about $2K/month): Managed Kafka for durable
+  SCADA ingestion.
+- **Data catalog/governance** (about $3K/month): Atlan, Alation, or
+  similar for access control, lineage, audit trails. Required
+  for NERC CIP compliance.
+- **ML platform** (about $2K/month): Weights & Biases, SageMaker, or
+  Vertex AI for experiment tracking and model
+  serving.
+- **Pipeline orchestration** (about $1K/month): Managed Airflow
+  (Astronomer, MWAA) for scheduling and monitoring
+  ETL.
+
+These are managed SaaS tiers sized for a ~500-turbine operation.
+Self-hosted would be cheaper but requires more ops headcount.
+
+streaming_cost = $2000 * 12
+governance_cost = $3000 * 12
+ml_platform_cost = $2000 * 12
+orchestration_cost = $1000 * 12
+diy_tools = sum of streaming_cost, governance_cost, ml_platform_cost, orchestration_cost
+
+### Integration engineer
+
+Someone has to connect these 5 tools, maintain the glue code,
+build the governance layer that doesn't exist natively across
+them, and debug cross-system failures:
+
+diy_engineer = $160K
+
+### Total DIY
+
+diy_total = diy_compute + diy_tools + diy_engineer
+diy_monthly = diy_total / 12
+
+---
+
+## Part 5: Risk-Adjusted Business Case
+
+The real question isn't "what does the platform cost?" It's
+"what does NOT having the platform cost?"
+
+### False alarm dispatches
+
+Without a good ML model and data quality pipeline, anomaly
+detection runs on simple thresholds (e.g., "alert if gearbox
+temp > 80°C"). Simple thresholds produce many false positives.
+Each false alarm dispatches a technician to a remote site: truck
+roll, drive time, inspection, paperwork. Wind O&M site visits
+average $37/kW (source: [NREL O&M study, 2023](https://docs.nrel.gov/docs/fy23osti/83712.pdf)); for a false alarm on a single turbine
+component, $1,500–$2,500 is a reasonable estimate. 20/month is
+conservative for a 500-turbine fleet running basic thresholds
+(~1 false alarm per 25 turbines per month):
+
+dispatch_cost = $2000
+dispatches_per_month = 20
+annual_false_alarms = dispatch_cost * dispatches_per_month * 12
+
+### Missed bearing failures
+
+A catastrophic bearing failure destroys the gearbox and can
+damage the generator. Replacement cost: $200K–$800K including
+the gearbox itself, crane rental at [$80K+/day](https://www.pruftechnik.com/wind-turbine-gearbox-alignment/),
+labor, and lost generation revenue. [GM Insights](https://www.gminsights.com/industry-analysis/wind-turbine-gearbox-repair-and-refurbishment-market) reports $300K–$800K total. We use $500K.
+
+Without predictive maintenance, 2 missed failures/year across
+500 turbines is conservative — that's a 0.4% annual failure rate.
+EPRI reports fleet gearbox failure rates of 0.9% in years 1–4,
+rising with age, and 30–70% cumulative over 20 years
+([EPRI data](https://wifitalents.com/wind-turbine-failure-statistics/)).
+
+turbine_cost = $500K
+missed_per_year = 2
+annual_missed_failures = turbine_cost * missed_per_year
+
+### NERC CIP violation
+
+NERC enforces CIP (Critical Infrastructure Protection) standards.
+The maximum penalty is $1.54M per violation per day as of
+2025 ([NERC Sanction Guidelines](https://www.nerc.com/pa/Stand/Resources/Documents/Appendix_4B_of_the_Rules_of_Procedure_Sanction_Guidelines.pdf)). Duke Energy was [fined $10M](https://www.utilitydive.com/news/duke-fined-10m-for-cybersecurity-lapses-since-2015/547528/) in 2019 for 127 cybersecurity violations over 3 years. A single
+audit finding for inadequate access controls on CEII typically
+results in a $500K–$1M settlement. We use $1M as a "one bad
+audit" scenario:
+
+nerc_fine = $1M
+
+total_risk = annual_false_alarms + annual_missed_failures + nerc_fine
+
+### Platform availability
+
+Data gaps mean blind spots for anomaly detection:
+
+good_uptime = downtime(99.9%, 1 year)
+great_uptime = downtime(99.99%, 1 year)
+
+At 99.9% you lose good_uptime of data/year — enough to miss
+a bearing failure developing over a weekend. At 99.99% it's
+great_uptime.
+
+---
+
+## Detailed Breakdown (computed)
+
+Change any assumption above and rerun to see how these move.
+
+| Item | Monthly | Annual |
+|------|---------|--------|
+| **Databricks platform** | | |
+| SQL warehouse (15 analysts, $0.70/DBU) | {{sql_monthly}} | {{sql_annual}} |
+| ETL pipelines ($0.15/DBU) | {{etl_monthly}} | {{etl_annual}} |
+| ML training + serving ($0.40/DBU) | {{ml_monthly}} | {{ml_annual}} |
+| Cloud infrastructure (50% of DBU) | | {{cloud_infra_annual}} |
+| Storage (S3/ADLS) | {{storage_rate}} | {{storage_annual}} |
+| Support (10% of DBU) | | {{support_annual}} |
+| **Subtotal (infra)** | **{{infra_monthly}}** | **{{infra_annual}}** |
+| Platform team (2 engineers) | | {{platform_team_annual}} |
+| **Total with people** | **{{total_monthly}}** | **{{total_with_people}}** |
+| | | |
+| **DIY alternative** | **{{diy_monthly}}** | **{{diy_total}}** |
+| | | |
+| **Risk without platform** | | **{{total_risk}}** |
+
+### Try it yourself
+
+Change `turbines = 50` at the top and rerun. The storage drops,
+the compute drops, the risk drops — and suddenly DuckDB + dbt
+on a single server looks like the right call.
+
