@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+.ruff_cache/
+
+# uv
+.python-version
+
+# Databricks
+.databricks/
+
+# Hugo
+site/public/
+site/resources/
+site/.hugo_build.lock
+
+# Exercise output data (generate it yourself)
+data/hourly/
+data/delta/
+data/output/
+
+# Secrets
+.env
+.env.*
+databricks.cfg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

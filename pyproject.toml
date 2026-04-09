@@ -1,0 +1,33 @@
+[project]
+name = "learn-databricks"
+version = "0.1.0"
+description = "Hands-on Databricks learning exercises"
+requires-python = ">=3.12"
+dependencies = [
+    # Module 2–3: Delta Lake without Spark
+    "deltalake>=0.18",
+    "pandas>=2.2",
+    "pyarrow>=15.0",
+    # Module 7: MLflow and anomaly detection
+    "mlflow>=2.14",
+    "scikit-learn>=1.5",
+    # Module 6: Databricks SQL connector (for querying DBSQL from local scripts)
+    "databricks-sql-connector>=3.3",
+    # Utilities
+    "rich>=13.0",     # pretty terminal output in exercises
+    "typer>=0.12",    # CLI for exercise scripts
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "hugo>=0.160",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

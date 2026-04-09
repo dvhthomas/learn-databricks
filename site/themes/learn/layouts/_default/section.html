@@ -1,0 +1,62 @@
+{{ define "main" }}
+<article>
+  <h1>{{ .Title }}</h1>
+  {{ if .Params.summary }}<p class="summary">{{ .Params.summary }}</p>{{ end }}
+  {{ if .Params.status }}<span class="status status-{{ .Params.status }}">{{ .Params.status }}</span>{{ end }}
+
+  {{ .Content }}
+
+  {{/* List child sections (e.g., modules listed on /modules/) */}}
+  {{ if .Sections }}
+  {{ range .Sections.ByWeight }}
+  <div class="module-card">
+    <h2><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2>
+    {{ if .Params.summary }}<p>{{ .Params.summary }}</p>{{ end }}
+    {{ if .Params.status }}<span class="status status-{{ .Params.status }}">{{ .Params.status }}</span>{{ end }}
+  </div>
+  {{ end }}
+  {{ end }}
+
+  {{/* List lectures within a module */}}
+  {{ $lectures := where .Pages "Params.type" "lecture" }}
+  {{ if $lectures }}
+  <h2>Lectures</h2>
+  <ol class="lecture-list">
+    {{ range $lectures.ByWeight }}
+    <li>
+      <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+      {{ if .Params.summary }} — {{ .Params.summary }}{{ end }}
+    </li>
+    {{ end }}
+  </ol>
+  {{ end }}
+
+  {{/* List exercises within a module */}}
+  {{ $exercises := where .Pages "Params.type" "exercise" }}
+  {{ if $exercises }}
+  <h2>Exercises</h2>
+  <ul class="exercise-list">
+    {{ range $exercises.ByWeight }}
+    <li>
+      <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+      {{ if .Params.summary }} — {{ .Params.summary }}{{ end }}
+      {{ if .Params.lectures }}
+        <span class="exercise-lectures">(covers: {{ range $i, $l := .Params.lectures }}{{ if $i }}, {{ end }}{{ $l }}{{ end }})</span>
+      {{ end }}
+    </li>
+    {{ end }}
+  </ul>
+  {{ end }}
+
+  {{/* List knowledge tests within a module */}}
+  {{ $tests := where .Pages "Params.type" "test" }}
+  {{ if $tests }}
+  <h2>Knowledge Tests</h2>
+  <ul>
+    {{ range $tests.ByWeight }}
+    <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
+    {{ end }}
+  </ul>
+  {{ end }}
+</article>
+{{ end }}

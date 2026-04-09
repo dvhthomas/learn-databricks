@@ -1,0 +1,31 @@
+<aside class="sidebar">
+  <h3>Modules</h3>
+  {{ $modules := where .Site.Sections "Section" "modules" }}
+  {{ range $modules }}
+    {{ range .Sections.ByWeight }}
+    <details{{ if or (eq $.RelPermalink .RelPermalink) (.IsAncestor $) }} open{{ end }}>
+      <summary><a href="{{ .RelPermalink }}">{{ .Title }}</a></summary>
+      <ul>
+        {{ $lectures := where .Pages "Params.type" "lecture" }}
+        {{ range $lectures.ByWeight }}
+        <li{{ if eq $.RelPermalink .RelPermalink }} class="current"{{ end }}>
+          <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+        </li>
+        {{ end }}
+        {{ $exercises := where .Pages "Params.type" "exercise" }}
+        {{ range $exercises.ByWeight }}
+        <li{{ if eq $.RelPermalink .RelPermalink }} class="current"{{ end }}>
+          <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+        </li>
+        {{ end }}
+        {{ $tests := where .Pages "Params.type" "test" }}
+        {{ range $tests.ByWeight }}
+        <li{{ if eq $.RelPermalink .RelPermalink }} class="current"{{ end }}>
+          <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+        </li>
+        {{ end }}
+      </ul>
+    </details>
+    {{ end }}
+  {{ end }}
+</aside>

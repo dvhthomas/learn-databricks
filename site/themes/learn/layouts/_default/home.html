@@ -1,0 +1,27 @@
+{{ define "main" }}
+<h1>{{ .Site.Title }}</h1>
+{{ .Content }}
+
+<h2>Modules</h2>
+{{ range (where .Site.RegularPages.ByWeight "Section" "modules").GroupByParam "module" }}
+<div class="module-group">
+  {{ range .Pages }}
+    {{ if .IsSection }}
+    <h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
+    <p>{{ .Params.summary }}</p>
+    {{ end }}
+  {{ end }}
+</div>
+{{ end }}
+
+{{ $modules := where .Site.Sections "Section" "modules" }}
+{{ range $modules }}
+  {{ range .Sections }}
+  <div class="module-card">
+    <h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3>
+    <p>{{ .Params.summary }}</p>
+    {{ if .Params.status }}<span class="status status-{{ .Params.status }}">{{ .Params.status }}</span>{{ end }}
+  </div>
+  {{ end }}
+{{ end }}
+{{ end }}

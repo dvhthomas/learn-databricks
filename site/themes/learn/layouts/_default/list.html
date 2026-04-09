@@ -1,0 +1,12 @@
+{{ define "main" }}
+<h1>{{ .Title }}</h1>
+{{ .Content }}
+
+{{ range .Sections }}
+<div class="module-card">
+  <h2><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2>
+  {{ if .Params.summary }}<p>{{ .Params.summary }}</p>{{ end }}
+  {{ if .Params.status }}<span class="status status-{{ .Params.status }}">{{ .Params.status }}</span>{{ end }}
+</div>
+{{ end }}
+{{ end }}

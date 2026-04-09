@@ -1,0 +1,25 @@
+baseURL: http://localhost:1313/
+locale: en-us
+title: Learn Databricks
+theme: learn
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  highlight:
+    style: dracula
+    lineNos: false
+
+params:
+  description: Hands-on learning curriculum for Databricks and the modern data lakehouse
+  repoURL: https://github.com/dvhthomas/learn-databricks
+
+menu:
+  main:
+    - name: Modules
+      url: /modules/
+      weight: 10
+    - name: Setup
+      url: /setup/
+      weight: 20
