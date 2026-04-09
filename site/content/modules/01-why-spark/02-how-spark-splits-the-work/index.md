@@ -65,8 +65,6 @@ graph LR
     E4 --> OS
 ```
 
-**Spark Connect (new in Spark 4.0):** Traditionally, your PySpark code runs inside the driver process, which requires a full JVM. Spark 4.0 introduced Spark Connect — a thin client architecture where your code sends requests to a remote Spark server over gRPC. The `pyspark-client` package is only 1.5 MB and has no JVM dependency[^2]. This decouples "where you write code" from "where Spark runs" — useful on Databricks where serverless compute handles the cluster and you just connect to it.
-
 ## Partitions: how data gets divided
 
 Spark doesn't send random chunks of data to each executor. It divides the data into logical slices called partitions.
@@ -85,6 +83,8 @@ How does Spark decide on partitions?
 Partition count matters more than most people think. Too few partitions means some executors sit idle while others are overloaded. Too many means the overhead of managing tiny tasks dominates actual processing. A reasonable starting point: 2–4 partitions per CPU core in your cluster.
 
 **Wind utility example:** Your 3-year SCADA dataset is stored as daily Delta files — roughly 1,095 files. Spark creates ~1,095 partitions. With a 10-executor cluster (4 cores each = 40 cores), each core processes about 27 partitions sequentially. That's well-balanced. If instead you had one giant Parquet file, Spark would create just one partition — 39 cores idle, one doing all the work.
+
+**Partition scheduling in practice:** If you have 1,000 partitions but only 40 executor cores, Spark queues the tasks — each core processes partitions sequentially, picking up the next one as it finishes. This is fine; it just means the job takes longer. The danger is at the extremes. Too *few* partitions — say 40 partitions on 40 cores — means one slow partition blocks everything (the job finishes when the slowest task finishes, and there's no work to fill the gap). Too *many* partitions — say 100,000 tiny partitions — means the overhead of scheduling, serializing, and tracking each task exceeds the actual computation. The task scheduler on the driver becomes the bottleneck, not the data processing on the executors.
 
 ## The DAG: Spark's execution plan
 
@@ -116,7 +116,7 @@ Why build a plan instead of executing immediately? Because the plan lets Spark o
 
 - **Reorder operations.** Push the `gearbox_temp` filter before the join so less data gets shuffled.
 - **Combine steps.** Merge adjacent operations that can run together without moving data.
-- **Skip unnecessary work.** If you only select 3 columns from a 50-column Parquet file, Spark reads only those 3 columns from disk (this is called "column pruning").
+- **Skip unnecessary work.** If you only select 3 columns from a 50-column Parquet file, Spark reads only those 3 columns from disk (this is called "column pruning"). Column pruning means Spark only reads the columns your query actually uses — if you `SELECT wind_speed` from a table with 60 columns, Spark skips the other 59 at the file level (Parquet stores columns independently, so unneeded columns are never read from disk or transferred over the network).
 
 You can see the plan by calling `.explain()`:
 
@@ -183,6 +183,10 @@ sequenceDiagram
 6. **Results come back.** The driver collects the final results and returns them to your notebook.
 
 The next lecture covers the one thing that makes this machinery expensive: what happens when Spark DOES need to move data between executors.
+
+## Looking ahead: Spark Connect
+
+This driver/executor model is evolving. Traditionally, your PySpark code runs inside the driver process, which requires a full JVM. Spark 4.0 introduced **Spark Connect** — a thin client architecture where your code sends requests to a remote Spark server over gRPC. The `pyspark-client` package is only 1.5 MB and has no JVM dependency[^2]. This decouples "where you write code" from "where Spark runs" — useful on Databricks where serverless compute handles the cluster and you just connect to it. The driver/executor split still exists on the server side; Spark Connect changes how you *talk to* the driver, not how the driver talks to executors.
 
 **Key takeaway: Spark separates planning from execution. The driver builds a DAG of your transformations, optimizes the whole plan, then distributes the work across executors that each process a partition of the data. Nothing runs until you call an action. This architecture lets Spark optimize across your entire query — but it also means errors surface later and debugging requires understanding the plan, not just the code.**
 

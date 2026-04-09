@@ -96,6 +96,8 @@ The choice is not about severity -- it is about what kind of problem the violati
 
 The pattern that emerges: **`expect`** for anomalies you want to study, **`expect_or_drop`** for rows that are definitively bad, **`expect_or_fail`** for conditions that indicate the pipeline's inputs are fundamentally broken[^1].
 
+The real difficulty is not choosing between the three variants -- it is deciding where to set the threshold. Is 55 C on a 30 C day an anomaly or a sensor error? This is a domain question, not a data engineering question. The best practice: start with `@dlt.expect` (monitor everything, drop nothing), run for a week, review the failure rates, then tighten to `@dlt.expect_or_drop` for conditions where the failure rate and domain knowledge justify filtering. Do not over-engineer quality rules on day one.
+
 ## Grouping expectations
 
 When you have many rules, defining them individually gets verbose. DLT provides group decorators that accept a dictionary of rules[^1]:
@@ -181,6 +183,22 @@ def quarantine_sensor_readings():
 ```
 
 This gives you the best of both worlds: Silver is clean, but the quarantine table preserves the evidence. The maintenance team can query quarantine to identify which sensors are producing bad data.
+
+Keeping quarantine filters in sync with Silver filters is a real maintenance burden. A better pattern: instead of duplicating the filter logic, use a single `@dlt.expect_or_drop` on Silver and write a separate quarantine table that reads from Bronze with the INVERSE condition. Or better still, use DLT's built-in quality metrics: every `@dlt.expect` (without `_or_drop` or `_or_fail`) records pass/fail counts without dropping rows. Query the pipeline's event log to find which rows failed: `SELECT * FROM event_log WHERE event_type = 'flow_progress'` -- the `data_quality` field shows expectation pass rates per batch.[^1]
+
+To query DLT quality metrics programmatically, use the event log (stored as a Delta table in your pipeline's storage location):
+
+```sql
+-- Quality metrics from the last 24 hours
+SELECT
+  timestamp,
+  details:flow_progress:data_quality:expectations AS expectations
+FROM event_log('my_pipeline')
+WHERE event_type = 'flow_progress'
+  AND timestamp > current_timestamp() - INTERVAL 1 DAY
+```
+
+Each expectation entry shows `name`, `dataset`, `passed_records`, and `failed_records`. This is the data a NERC auditor wants: "What percentage of SCADA readings passed quality checks this month?"[^2]
 
 ## How this differs from testing frameworks
 

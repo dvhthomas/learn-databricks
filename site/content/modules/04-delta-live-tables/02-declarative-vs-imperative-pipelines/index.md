@@ -153,6 +153,8 @@ graph LR
 
 DLT tracks what data has already been processed. When new SCADA readings arrive, it processes only the new rows through Bronze and Silver -- no full recomputation. This is what you would build with checkpoint management in plain Spark, but DLT manages the state automatically[^3].
 
+How does DLT know what data is "new"? For `dlt.read_stream()` (streaming sources), DLT uses Spark Structured Streaming's checkpoint mechanism -- it tracks the last processed offset (Kafka offset, file modification timestamp for Auto Loader, etc.) in a checkpoint directory. When the pipeline restarts, it resumes from the last checkpoint. For `dlt.read()` (batch sources), DLT recomputes the entire table on each run -- there is no incremental tracking. This is why the choice between `read()` and `read_stream()` matters: streaming reads are incremental (fast, append-only), batch reads are full recompute (slower, but guaranteed complete). For the wind utility's SCADA data: use `read_stream()` for Bronze-to-Silver (new readings arrive continuously) and `read()` for Silver-to-Gold if Gold is a full recompute of daily aggregates.[^3]
+
 ### Error handling and retries
 
 If a transformation fails, DLT knows exactly which step failed and which downstream tables are affected. It can retry the failed step without re-running the entire pipeline. The failure is visible in the pipeline UI with the exact error, the affected table, and the data that triggered it.
@@ -194,6 +196,8 @@ The product you are learning has three names, and understanding the timeline mat
 **Spark Declarative Pipelines** -- in June 2025, Databricks donated the core declarative pipeline framework to the Apache Spark open-source project. This means the `from pyspark import pipelines` API is becoming part of Spark itself, not just a Databricks proprietary feature. The Databricks-specific features (quality dashboard, enhanced autoscaling, Unity Catalog integration) remain proprietary, but the core declarative API is open source[^5].
 
 For practical purposes in 2026: use `import dlt` in Databricks notebooks today. Know that the new API uses `from pyspark import pipelines as dp` with `@dp.table` and `@dp.materialized_view` decorators. The concepts (declarative tables, expectations, dependency graphs) are identical across both APIs.
+
+Which import should you use today? If you are writing a new pipeline in 2026, use `import dlt` -- it is stable, well-documented, and will be supported through a long deprecation window. The `from pyspark import pipelines` API is the future but is still maturing as of mid-2026. When it stabilizes, migration will be mechanical (rename decorators and imports). Do not let the naming transition paralyze you -- the concepts and architecture are identical across both APIs.
 
 ```mermaid
 timeline

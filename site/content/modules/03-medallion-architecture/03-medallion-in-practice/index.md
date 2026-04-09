@@ -57,6 +57,8 @@ graph TD
 
 Multiple Gold tables are normal and expected. The anti-pattern is having one Gold table that analysts must re-aggregate for their specific use case — that means Gold is at the wrong grain.
 
+A common question: what if the source sends 1-second readings but you only care about 10-minute averages? You still ingest at 1-second grain in Bronze (it is the raw record). But you have a choice at Silver: keep 1-second grain (more storage, more flexibility) or downsample to 10-minute grain (less storage, but you lose the ability to compute sub-10-minute features later). The decision depends on your downstream use cases. If ML models need sub-minute features, keep the high grain. If all consumers need 10-minute or coarser data, downsample in Silver and document the decision.
+
 ## Anti-pattern 1: Gold that is just filtered Silver
 
 The symptom: your Gold table has the same grain as Silver, but with a `WHERE` clause applied. For example, `gold_readings` is just Silver readings where `sensor_type = 'temperature'`.
@@ -152,6 +154,10 @@ valid_df.write.format("delta") \
 **Gold:** May or may not incorporate the new field, depending on business requirements. If no Gold table needs blade ice detection data, Gold does not change. If a new Gold table (`gold_icing_events`) is needed, it is added as a new table, not by modifying existing Gold tables.
 
 The key principle: **schema changes flow forward through explicit decisions at each layer, not automatically.** Bronze absorbs them silently. Silver incorporates them deliberately. Gold reflects them only when the business requires it.
+
+### End-to-end schema evolution example
+
+Here is what schema evolution looks like across all three layers when a firmware update adds `blade_ice_detection` to the SCADA payload: (1) **Bronze** — the new field appears automatically because Bronze ingests raw data (if using Auto Loader with `cloudFiles.schemaEvolution = addNewColumns`, or VARIANT columns that already capture everything). (2) **Silver** — your validation logic does not know about the new field, so it passes through as NULL until you update the Silver pipeline to validate it. Use `mergeSchema=True` on the Silver write to add the column to the Delta schema. (3) **Gold** — if Gold does not aggregate `blade_ice_detection`, nothing changes. If you want ice detection metrics in Gold, you add a new aggregation and recompute. The key: schema evolution is a pipeline change, not a one-time migration. Each layer needs explicit attention.
 
 ## Code example: Bronze through Gold
 

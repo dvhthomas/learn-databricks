@@ -139,7 +139,9 @@ Delta Lake uses optimistic concurrency. On local filesystems, it relies on atomi
 3. **One wins** (whichever creates the file first). The other gets a conflict error.
 4. **The loser retries** — reads the new log (which now includes version 6), checks whether its changes still apply, and writes version 7.
 
-In practice, conflicts are rare for append-only workloads (like SCADA ingestion) because both writers are adding new files, not modifying the same data. Conflicts are more common for `MERGE` or `UPDATE` operations that touch the same rows.
+In practice, conflicts are rare for append-heavy workloads (like SCADA ingestion) because each writer adds new files, so version numbers don't collide often. Conflicts happen when two writers UPDATE or DELETE overlapping rows — both try to "remove" the same file and "add" a replacement. When a conflict occurs, Delta retries automatically: it re-reads the log, recomputes whether the changes still apply, and tries the next version number. The retry limit is controlled by `spark.databricks.delta.maxCommitAttempts` (default: 10,000,000 — effectively unlimited for most workloads)[^2]. For the wind utility's append-heavy SCADA ingestion, you'll almost never see a conflict. For MERGE operations on the same Gold table from two pipelines running concurrently, you might — but the retry mechanism handles it transparently as long as the operations touch different rows.
+
+Delta's atomicity relies on the storage system supporting atomic file creation (put-if-absent). Amazon S3 achieved strong read-after-write consistency in December 2020[^3]; before that, Delta on S3 used a DynamoDB-based log store as a coordination layer to guarantee that only one writer could create a given log entry. On Azure (ADLS Gen2) and GCS, atomic rename operations are natively supported by the filesystem. If you're on S3 today, Delta handles this transparently — but it's worth knowing that the atomicity guarantee comes from the storage layer, not just the log format.
 
 Delta Lake 4.0 introduced **Coordinated Commits** — a table feature that uses an external coordinator (like a catalog service) instead of relying on atomic file creation. This makes multi-engine and multi-cloud writes more reliable[^1].
 
@@ -195,3 +197,7 @@ The next lecture covers the practical features built on top of this log: schema 
 ---
 
 [^1]: Delta Lake 4.0 introduced Coordinated Commits as a table feature for reliable multi-engine writes. See [Delta Lake 4.0 release blog](https://delta.io/blog/2025-09-25-delta-lake-40/).
+
+[^2]: The `spark.databricks.delta.maxCommitAttempts` configuration controls how many times Delta retries a conflicted commit. The default of 10,000,000 makes retries effectively unlimited. See [Delta Lake Internals — Configuration Properties](https://books.japila.pl/delta-lake-internals/configuration-properties/).
+
+[^3]: Amazon S3 delivered strong read-after-write consistency for all applications on December 1, 2020. See [AWS announcement](https://aws.amazon.com/about-aws/whats-new/2020/12/amazon-s3-now-delivers-strong-read-after-write-consistency-automatically-for-all-applications/).

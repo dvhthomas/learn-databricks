@@ -129,6 +129,17 @@ Photon is not a full replacement for Spark. It accelerates a subset of operation
 
 For the wind utility's analysts, this does not matter. Their queries are exactly the kind Photon accelerates: filter by turbine, group by time period, aggregate capacity factors, join with weather data. Pure SQL analytics.
 
+### When Photon doesn't help
+
+Not every query benefits from Photon:
+
+1. **Python UDFs** -- If your query calls a Python function (`CREATE FUNCTION ... LANGUAGE PYTHON`), that function runs in a separate Python interpreter, bypassing Photon entirely. The scan and join might be Photon-accelerated, but the UDF is a bottleneck.
+2. **Deeply nested JSON** -- Photon works on flat columnar data. If your query repeatedly extracts fields from deeply nested VARIANT/JSON columns, the extraction overhead can negate the vectorization benefit.
+3. **Network-bound queries** -- If your query shuffles more data than it computes (e.g., a massive cross-join), Photon makes the compute faster but the network transfer is unchanged. The bottleneck shifts, not shrinks.
+4. **Very small queries** -- Sub-second queries on tiny datasets don't benefit from vectorization because the overhead of setting up the Photon execution context exceeds the computation time.
+
+To check if Photon accelerated your query: open the Query Profile in the DBSQL UI. Photon-accelerated operators appear as `PhotonGroupBy`, `PhotonHashAggregate`, `PhotonHashJoin`, etc. If you see standard Spark operators (`HashAggregate`, `SortMergeJoin`), that portion fell back to the JVM engine.
+
 ## The cost model
 
 <div class="definition">
@@ -161,6 +172,26 @@ The key cost levers:
 - **Right-size**: Start small, let auto-scaling handle peaks. A 2X-Small warehouse handles most single-user queries fine.
 - **Result caching**: Repeated queries (dashboard refreshes) hit the cache instead of consuming compute. This is free.
 - **Serverless over Pro/Classic**: Faster suspend/resume means less idle compute time. The per-DBU premium often pays for itself.
+
+### Estimating your monthly DBSQL cost
+
+For the wind utility (15 analysts, ~100 queries/day, average query duration 5 seconds on a Medium serverless warehouse):
+
+```
+Warehouse size: Medium = 8 DBUs/hour
+Active query time: 100 queries x 5 sec = 500 sec/day ~ 0.14 hours/day
+Daily DBU consumption: 8 x 0.14 = 1.1 DBUs/day
+Monthly DBU consumption: 1.1 x 22 workdays = 24.2 DBUs/month
+Monthly cost: 24.2 x $0.70 (serverless rate) = ~$17/month
+
+But: the warehouse stays running during active periods.
+With auto-suspend at 10 minutes and 8 hours of analyst activity:
+Warm hours: ~4 hours/day (clustered analyst activity with idle gaps)
+Monthly warm DBUs: 8 x 4 x 22 = 704 DBUs/month
+Monthly cost: 704 x $0.70 = ~$493/month
+```
+
+The real cost is the warm time, not the query time. Serverless warehouses (~2 second startup) minimize warm time because they can suspend aggressively. Pro warehouses (5-10 minute startup) stay warm longer to avoid startup delays. This is why serverless is usually cheaper despite the higher per-DBU rate.
 
 **Key takeaway: A SQL warehouse is a dedicated, SQL-only compute endpoint powered by Photon's vectorized C++ engine. Serverless warehouses start in seconds, scale automatically, and suspend when idle -- making them dramatically more suitable for analyst workloads than all-purpose Spark clusters. The cost model rewards right-sizing and auto-suspend, which matters when you have 15 analysts with intermittent query patterns.**
 

@@ -89,6 +89,28 @@ The practical advice from organizations that have done this migration:[^2]
 4. **Budget for permission redesign.** This is the part that takes longer than expected. You are not just copying permissions — you are redesigning them for a three-level hierarchy with account-level groups.
 5. **Test downstream consumers.** BI dashboards, ML pipelines, and scheduled jobs all reference tables by name. Changing from `hive_metastore.sensors.readings` to `wind_prod.scada.turbine_readings` breaks every downstream reference.
 
+### What if migration goes wrong?
+
+The good news: HMS and UC coexist during migration. You do not flip a switch — you migrate table by table. If a migrated table has issues:
+
+1. **For CLONE migrations** — The original HMS table is untouched. Drop the UC clone (`DROP TABLE wind_prod.scada.turbine_readings`) and you are back to the HMS version. The trade-off: the clone has no transaction history from before the clone operation, so any time travel queries against pre-clone versions will not work on the UC copy.
+2. **For SYNC (external tables)** — The external location is now registered in UC, but the underlying data has not moved. To revert, remove the UC table registration. The data files remain at their original S3/ABFSS location, and the HMS external table definition still points to them.
+3. **For UPGRADE (in-place)** — This is the least reversible option. The table is now owned by UC. To revert, you would need to re-register the table in HMS manually (`CREATE TABLE hive_metastore.sensors.turbine_readings USING DELTA LOCATION 's3://wind-lake/scada/turbine_readings/'`). Delta transaction history is preserved in the `_delta_log/`, so the data itself is safe — the risk is in the metadata layer, not the data layer.
+
+Recommended approach: migrate non-critical tables first (dev and sandbox schemas). Run both HMS and UC paths in parallel for a week. Validate that queries return identical results by comparing row counts and checksums on key columns. Then migrate production tables. Keep the HMS registrations alive during a validation window — you can always drop them after the team confirms UC is working correctly.[^1]
+
+### How long does migration take?
+
+For the wind utility (estimated ~50 tables across Bronze/Silver/Gold, 15 analysts, 3 data engineers):
+
+- **Catalog and schema creation:** 1 day. This is mechanical — create the `wind_prod` catalog, create `scada`, `fleet_analytics`, and `governance` schemas, set up storage credentials and external locations. Well-documented in Databricks migration guides.[^2]
+- **Table migration:** 1-2 weeks. CLONE or SYNC each table, verify row counts and schema match. The actual commands are fast — a SYNC of an external table is near-instant because no data moves. The time is in testing each table after migration.
+- **Permission recreation:** 1 week. Map HMS workspace-local groups to UC account-level groups. Write GRANT statements for each group-schema combination. Test with each analyst role to confirm they can access what they should and cannot access what they should not. This step often surfaces permission inconsistencies that existed in HMS but were never noticed.
+- **Notebook and job path updates:** 1-2 weeks. Find-and-replace `hive_metastore.` with `wind_prod.` in every notebook, job, and dashboard. This is the longest tail — you will find references in unexpected places (hardcoded in ML feature pipelines, embedded in BI tool connection strings, cached in analyst notebooks that have not been run in months).
+- **Parallel validation:** 1 week. Run old and new paths simultaneously, compare results. This is the step that catches edge cases — a notebook that uses `spark.sql("USE hive_metastore.sensors")` implicitly, a job that references a table by two-part name without the catalog prefix.
+
+Total: 4-6 weeks with a dedicated data engineer. The pain is proportional to the number of notebooks, dashboards, and jobs that reference HMS paths, not the number of tables. An organization with 50 tables but 200 notebooks will take longer than one with 100 tables but 30 notebooks.[^3]
+
 ## Honest comparison: Unity Catalog vs. the alternatives
 
 Unity Catalog is not the only data governance option. Here is an honest assessment of the alternatives, including where they are genuinely better.

@@ -79,3 +79,37 @@ This exercise does the same anomaly detection experiment but uses:
 ### The key difference from local
 
 On your laptop, MLflow stored everything in a `./mlruns/` directory. On Databricks, everything is stored in a managed service with enterprise governance. The code is nearly identical — the experience is very different. This is the managed platform value proposition in action.
+
+## Exercise 3: ML platform cost model (CalcMark)
+
+The vibration model works. Now the question every stakeholder asks: **what does it cost to run in production?**
+
+This exercise is a CalcMark cost model that compares three paths for deploying the bearing failure prediction model: Databricks AI, AWS SageMaker, and DIY (MLflow OSS on cloud VMs).
+
+**Run it:**
+
+```sh
+cd modules/07-mlflow-and-ai/exercises
+cm eval ml-platform-costs.cm -v
+```
+
+### What the model covers
+
+- **Weekly retraining** on a GPU node (6 hours/week on 50 GB of features)
+- **Real-time serving** at 500 predictions/hour (one per turbine per hour, 24/7)
+- **Experiment tracking**, feature stores, and model monitoring on each platform
+- **The hidden cost of DIY** — 5 services to maintain, 10 hours/month of ops work
+- **Time to first production model** — Databricks (1-2 weeks) vs. SageMaker (3-4 weeks) vs. DIY (4-8 weeks)
+
+### What to think about
+
+- Databricks bundles MLflow tracking and Lakehouse Monitoring at no extra charge. How does that change the comparison if you are already on the platform vs. starting fresh?
+- The DIY path has the lowest infrastructure bill but the highest labor cost. At what team size does that trade-off flip?
+- Change `training_hours_per_run = 12` and rerun. What happens if you move from a simple Isolation Forest to a hyperparameter-tuned ensemble?
+- SageMaker's serving endpoint (ml.t2.medium) costs less than Databricks Model Serving. But what does it cost to move the feature data from Delta to S3 every time you retrain?
+
+### The interview angle
+
+> "Your wind utility's CFO asks why the ML platform costs $1,500/month when the data scientist could just run the model on their laptop. What do you say?"
+
+The cost model gives you the numbers. The answer is about risk: every week without automated bearing failure alerts is a week of undetected $500K failures. The platform cost is a rounding error next to the risk it mitigates.

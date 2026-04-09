@@ -108,6 +108,8 @@ This is a pattern that shows up in every enterprise data platform, not just Data
 The analyst-facing query layer of the Databricks platform. Provides SQL warehouses -- dedicated compute endpoints optimized for BI workloads -- that connect to Delta tables governed by Unity Catalog. Analysts query through SQL, BI tools, or the built-in SQL editor. DBSQL is Databricks' answer to the question: "How do SQL analysts use the lakehouse?"
 </div>
 
+There's a role between data engineer and SQL analyst that this picture misses: the **analytics engineer** -- someone who writes SQL transformations in dbt, builds data models, and maintains the Silver-to-Gold pipeline logic. Analytics engineers need DBSQL for interactive development AND a CI/CD workflow for deploying dbt models. On Databricks, they use DBSQL for ad-hoc queries and testing, but deploy through Databricks Workflows or dbt Cloud. This role is increasingly common and bridges the gap between the two workflows in the table above.
+
 Databricks SQL bridges this gap. It provides a SQL-native interface on top of the same Delta tables and Unity Catalog governance that the engineering team built. The analyst writes SQL against `wind_ops.gold.fleet_capacity_factor`. Under the hood, a Photon-powered SQL warehouse executes the query against the governed Delta table. The analyst does not know or care that the data went through a DLT pipeline -- they just see a table[^6].
 
 **This is what solves the CFO problem.** When all 15 analysts query the same governed Gold table through the same SQL warehouse, there is only one version of the capacity factor. Not because you told them to agree, but because there is only one source of truth and only one way to reach it.

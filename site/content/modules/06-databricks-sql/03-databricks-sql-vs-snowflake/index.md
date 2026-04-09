@@ -116,6 +116,16 @@ The answer to "Databricks or Snowflake?" is not a universal recommendation. It d
 
 **If you already have both:** Many enterprises run both. This is not failure -- it is pragmatic. The retail division keeps Snowflake (it works, their analysts are productive). The wind operations team uses Databricks end-to-end. Delta Sharing or Snowflake's Iceberg table support bridges the data where needed. Consolidation is a goal for cost reduction, not an urgent requirement.
 
+### The hybrid reality
+
+Many enterprises run both Databricks and Snowflake. Here's how to divide the work:
+
+- **Databricks owns:** Raw ingestion (Auto Loader), streaming pipelines (Structured Streaming/DLT), ML feature engineering, model training, and data that feeds multiple workloads (engineering + science + analytics).
+- **Snowflake owns:** SQL analytics for teams already on Snowflake, BI tool connectivity for tools with deeper Snowflake integration, and workloads where Snowflake's concurrency model is genuinely better (100+ concurrent dashboard users).
+- **Shared:** Gold tables exposed via Delta Sharing to Snowflake, or Snowflake tables exposed via Iceberg to Databricks. Unity Catalog governs the Databricks side; Snowflake's access controls govern the Snowflake side.
+
+The dividing line: if the data needs engineering or ML processing, it lives in Databricks. If it's a pure SQL analytics workload for a team already productive in Snowflake, don't migrate it -- share it via Delta Sharing.
+
 ## What to say in customer conversations
 
 ### Scenario 1: "Why not just use Snowflake for everything?"

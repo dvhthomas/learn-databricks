@@ -157,6 +157,18 @@ graph TD
 
 The real differentiator is rarely the AI capabilities themselves — it's the integration story. The best AI platform is the one closest to where your data already lives, governed by the system your compliance team already trusts.
 
+## When Databricks AI is the wrong choice
+
+Be honest with customers about these scenarios:
+
+1. **GPU-intensive distributed training** -- If the team needs 100+ GPUs for large language model training, SageMaker or Vertex AI have deeper integration with GPU cluster management, spot instance handling, and training job orchestration. Databricks can run distributed training (via Mosaic ML), but the tooling is less mature for very large-scale jobs.
+
+2. **Established MLOps on another platform** -- If the team already has SageMaker pipelines, a model registry, and monitoring in production, migrating to Databricks AI has a real cost and a 3-6 month learning curve. The unified platform benefit only materializes after migration is complete.
+
+3. **Simple SQL-based predictions** -- If the use case is "predict next month's energy output using a linear regression on historical data," Snowflake Cortex can do this in a single SQL statement with no infrastructure management. Don't recommend a full Databricks ML stack for a problem that fits in a SQL function.
+
+4. **Real-time feature engineering at sub-second latency** -- If the model needs features computed from the last 100ms of streaming data, you need a dedicated stream processing engine (Flink, Kafka Streams) feeding a feature store. Databricks Structured Streaming adds latency that may not meet sub-second SLAs.
+
 ## The summary table
 
 | Dimension | Databricks AI | SageMaker | Vertex AI | Snowflake Cortex |

@@ -64,7 +64,7 @@ The moment you modify Bronze — even to "fix" a clearly wrong reading — you l
 1. **Auditability.** You cannot prove to a NERC auditor what the system originally received.
 2. **Recoverability.** You cannot reprocess from a clean starting point because the starting point has been altered.
 
-Databricks recommends storing Bronze data with loose typing — using strings or the `VARIANT` type for fields that might change — to protect against unexpected schema changes from source systems.[^2] The philosophy is: accept everything, type it later.
+Databricks recommends storing Bronze data with loose typing — using strings or the `VARIANT` type for fields that might change — to protect against unexpected schema changes from source systems.[^2] The VARIANT type (available in Delta Lake and Databricks SQL) stores semi-structured data — JSON objects, arrays, mixed types — without requiring a fixed schema. Bronze tables often use VARIANT for the raw payload column, letting you ingest whatever the source sends and defer schema decisions to Silver. This is different from storing everything as STRING: VARIANT preserves the original structure (nested objects, arrays, numbers) and supports efficient querying with dot notation (`payload.temperature`). The philosophy is: accept everything, type it later.
 
 ### What Bronze is NOT
 
@@ -120,6 +120,8 @@ That sentence is worth more to a NERC auditor than any amount of documentation.
 ### Silver preserves grain
 
 A critical detail: Silver is at the same granularity as Bronze. If Bronze has one row per sensor reading per 10 minutes, Silver has one row per sensor reading per 10 minutes. Silver cleans the data — it does not aggregate it. Aggregation is Gold's job.
+
+Why not aggregate in Silver and save storage? Three reasons: (1) **Reprocessing** — if your Gold aggregation logic changes (e.g., switching from mean to median temperature), you recompute Gold from Silver without touching Bronze. If Silver were already aggregated, you'd have to reprocess from Bronze. (2) **ML models** — predictive maintenance models need per-reading features (vibration waveform shape, temperature rate-of-change between readings). Hourly aggregates destroy this signal. (3) **Compliance** — NERC auditors may ask "show me every reading from turbine T-042 on March 15." If Silver only has hourly averages, you cannot answer without going back to Bronze.
 
 ## Gold: business-ready, not small
 
