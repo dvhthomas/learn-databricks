@@ -1,7 +1,7 @@
 ---
 title: "Module 3: Medallion Architecture"
 summary: "Field engineers want raw readings. Analysts want clean aggregates. Compliance wants an audit trail. How do you serve everyone from one copy of the data?"
-status: planned
+status: in-progress
 weight: 3
 tags:
   - medallion

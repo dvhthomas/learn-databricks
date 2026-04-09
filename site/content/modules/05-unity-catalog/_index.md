@@ -1,7 +1,7 @@
 ---
 title: "Module 5: Unity Catalog"
 summary: "NERC auditors ask who has access to grid operations data. You can't answer. How do you govern data across teams, clouds, and compliance requirements?"
-status: planned
+status: in-progress
 weight: 5
 tags:
   - unity-catalog

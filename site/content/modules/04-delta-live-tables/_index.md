@@ -1,7 +1,7 @@
 ---
 title: "Module 4: Delta Live Tables"
 summary: "Your medallion pipeline breaks at 3am and nobody knows which step failed or what data was affected. What if you declared the outcome instead of coding every step?"
-status: planned
+status: in-progress
 weight: 4
 tags:
   - delta-live-tables
