@@ -71,8 +71,10 @@ You could add checks: "did Silver update in the last 10 minutes?" But now you ar
 When the Silver script crashes, what state is the Silver table in? That depends on exactly where the crash happened. If it crashed before writing, Silver is stale but consistent. If it crashed mid-write and you were not using Delta Lake's transaction guarantees carefully, Silver might contain a partial batch -- some turbines updated, others not. The next run might or might not fix this, depending on whether your script is idempotent[^2].
 
 <div class="definition">
+
 <strong>Idempotent</strong>
 An operation that produces the same result whether you run it once or multiple times. A truly idempotent pipeline can be safely re-run after a failure without producing duplicates or corrupted data. Achieving idempotency in hand-coded pipelines requires careful design -- it does not come for free.
+
 </div>
 
 In Module 3, you handled this by overwriting the Silver table on each run. That works for a small dataset. At 500 turbines with 10-minute intervals, reprocessing the entire Silver table on every run becomes expensive. You want incremental processing -- but incremental processing with correct failure recovery is genuinely hard to implement by hand.

@@ -54,8 +54,10 @@ After working through Modules 1 through 5, it is tempting to think the hard part
 You might think: "We already have Databricks. Just give the analysts access to our Spark clusters." This is a common mistake, and it fails for three reasons.
 
 <div class="definition">
+
 <strong>All-purpose cluster</strong>
 A general-purpose Databricks compute resource designed for interactive development in notebooks. Supports Python, Scala, SQL, and R. Charges all-purpose compute DBU rates ($0.55/DBU on AWS Premium), starts in 4-8 minutes, and stays running until manually terminated or a timeout triggers. Designed for data engineers and data scientists, not SQL analysts.
+
 </div>
 
 **Startup time kills the workflow.** An all-purpose Spark cluster takes 4 to 8 minutes to start. An analyst opens Tableau, clicks "refresh dashboard," and waits. After 5 minutes, they give up and use their local CSV. A SQL warehouse starts in 2 to 6 seconds[^4]. That difference is not incremental -- it is the difference between a tool analysts use and a tool analysts avoid.
@@ -104,8 +106,10 @@ This is a pattern that shows up in every enterprise data platform, not just Data
 | Governance interaction | Produces governed data | Consumes governed data |
 
 <div class="definition">
+
 <strong>Databricks SQL (DBSQL)</strong>
 The analyst-facing query layer of the Databricks platform. Provides SQL warehouses -- dedicated compute endpoints optimized for BI workloads -- that connect to Delta tables governed by Unity Catalog. Analysts query through SQL, BI tools, or the built-in SQL editor. DBSQL is Databricks' answer to the question: "How do SQL analysts use the lakehouse?"
+
 </div>
 
 There's a role between data engineer and SQL analyst that this picture misses: the **analytics engineer** -- someone who writes SQL transformations in dbt, builds data models, and maintains the Silver-to-Gold pipeline logic. Analytics engineers need DBSQL for interactive development AND a CI/CD workflow for deploying dbt models. On Databricks, they use DBSQL for ad-hoc queries and testing, but deploy through Databricks Workflows or dbt Cloud. This role is increasingly common and bridges the gap between the two workflows in the table above.

@@ -114,8 +114,10 @@ Every failure comes down to the same root cause: **a directory of Parquet files 
 These four properties — ACID — are what databases have provided for decades. Your PostgreSQL database doesn't have these problems. But when the data industry moved to "data lakes" (files in cloud storage), it gave up ACID guarantees for flexibility and cost. The result: every organization that builds production pipelines on raw files eventually hits these failures.
 
 <div class="definition">
+
 <strong>ACID</strong>
 A set of properties that guarantee reliable database transactions. <strong>Atomicity:</strong> a write either fully succeeds or fully fails — no partial results. <strong>Consistency:</strong> readers always see a valid state of the data. <strong>Isolation:</strong> concurrent operations don't interfere with each other. <strong>Durability:</strong> once committed, data survives crashes. Traditional databases provide ACID by default. Data lakes on raw files provide none of it.
+
 </div>
 
 ## What Delta Lake does about it

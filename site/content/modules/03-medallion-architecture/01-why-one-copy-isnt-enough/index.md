@@ -68,8 +68,10 @@ No matter how you structure that single table, you are making one team's life ha
 When the single table does not work, teams create workarounds. The most common one is what every data organization discovers independently: **the CSV extract.**
 
 <div class="definition">
+
 <strong>CSV extract antipattern</strong>
 A pattern where analysts download data from a shared source, transform it locally (in Excel, Python, or a personal database), and use the local copy for reporting. Each analyst's copy diverges from the source and from each other, creating "multiple versions of the truth."
+
 </div>
 
 Here is how it plays out at the wind utility:

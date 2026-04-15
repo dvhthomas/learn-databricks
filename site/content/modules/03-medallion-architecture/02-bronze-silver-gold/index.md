@@ -29,8 +29,10 @@ This lecture defines Bronze, Silver, and Gold mechanically — not as abstract m
 ## Bronze: the sacred record
 
 <div class="definition">
+
 <strong>Bronze layer</strong>
 The raw data landing zone. Contains exactly what arrived from the source system, with no transformation beyond adding ingestion metadata (timestamps, source identifiers, batch IDs). Bronze is append-only — data is never modified or deleted. It serves as the system of record and the foundation for all downstream reprocessing.
+
 </div>
 
 When the SCADA pipeline delivers a batch of turbine readings, Bronze stores them exactly as they arrived. The 999.9 C reading from sensor_0004? It goes in Bronze. The duplicate reading where a sensor retransmitted? It goes in Bronze. The new `blade_ice_detection` field from a firmware update? It goes in Bronze.
@@ -73,8 +75,10 @@ Bronze is not a staging area that gets cleared after processing. It is not tempo
 ## Silver: where trust is built
 
 <div class="definition">
+
 <strong>Silver layer</strong>
 The validated, cleaned, and conformed data layer. Silver applies business-agnostic quality rules: type casting, deduplication, null handling, range validation, and schema enforcement. Invalid readings are quarantined (not silently dropped) with rejection reasons. Silver maintains the same granularity as Bronze — individual readings — but guarantees that every record meets defined quality standards.
+
 </div>
 
 Silver is where the 999.9 C reading gets handled. Not silently dropped — *quarantined with a reason.*
@@ -126,8 +130,10 @@ Why not aggregate in Silver and save storage? Three reasons: (1) **Reprocessing*
 ## Gold: business-ready, not small
 
 <div class="definition">
+
 <strong>Gold layer</strong>
 The business-ready analytics layer. Gold contains data aggregated to the grain that business stakeholders actually need — hourly averages, daily summaries, monthly capacity factors, anomaly counts. Gold tables are named in business language (not engineering language) and optimized for the queries that run against them. Gold is typically recomputed from Silver, not appended to.
+
 </div>
 
 Gold is where data meets the business. The CFO does not want 7.2 million individual sensor readings. They want: "What was the fleet capacity factor last month? Which turbines underperformed? How many maintenance alerts were triggered?"

@@ -36,13 +36,17 @@ This simplicity is a genuine advantage. When it works, nothing beats it for spee
 When you submit code to Spark, it doesn't run on one machine. It runs on a cluster — a collection of machines coordinated to act as one system.
 
 <div class="definition">
+
 <strong>Driver</strong>
 The single process that runs your main program. It accepts your code, plans the execution, and coordinates the work. The driver does NOT process your data — it manages the processes that do. Think of it as the control room at the wind farm's operations center: it doesn't generate power, but without it, the turbines can't coordinate.
+
 </div>
 
 <div class="definition">
+
 <strong>Executor</strong>
 A worker process that runs on a machine in the cluster. Each executor receives tasks from the driver, processes a portion of the data, and reports results back. A cluster typically has many executors — anywhere from 2 to hundreds, depending on the workload[^1].
+
 </div>
 
 When you write `spark.read.parquet("scada/")`, the driver doesn't read the data. It tells the executors where the data is and what to do with it. Each executor reads a portion of the files and processes its share.
@@ -70,8 +74,10 @@ graph LR
 Spark doesn't send random chunks of data to each executor. It divides the data into logical slices called partitions.
 
 <div class="definition">
+
 <strong>Partition</strong>
 A chunk of your dataset that one executor task processes independently. If your data has 200 partitions and you have 10 executors, each executor processes roughly 20 partitions (one at a time or a few in parallel, depending on cores). Partitions are the fundamental unit of parallelism in Spark[^1].
+
 </div>
 
 How does Spark decide on partitions?
@@ -108,8 +114,10 @@ result = (
 Spark doesn't execute each line as you write it. It records what you *want* to do and builds a plan.
 
 <div class="definition">
+
 <strong>DAG (Directed Acyclic Graph)</strong>
 Spark's internal representation of your computation as a graph of steps. Each node is an operation (filter, join, aggregate); edges show data flow. "Directed" means data flows one way. "Acyclic" means no loops — the plan always moves forward. Spark uses this graph to optimize the entire computation before running anything[^3].
+
 </div>
 
 Why build a plan instead of executing immediately? Because the plan lets Spark optimize. It can:
@@ -131,8 +139,10 @@ This prints the physical and logical plans — extremely useful for debugging sl
 This is the concept that surprises people coming from pandas or SQL:
 
 <div class="definition">
+
 <strong>Lazy evaluation</strong>
 Spark records transformations (filter, groupBy, join, select) but does NOT execute them. Execution only happens when you call an <em>action</em> — an operation that needs to return a result to the driver or write data to storage[^3].
+
 </div>
 
 **Transformations** (lazy — build the plan):

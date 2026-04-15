@@ -29,8 +29,10 @@ This lecture covers the patterns that make medallion work in production and the 
 ## Deciding the grain at each layer
 
 <div class="definition">
+
 <strong>Grain</strong>
 The level of detail a table represents — what one row means. A table with one row per sensor reading per 10 minutes has a finer grain than a table with one row per turbine per hour. Choosing the wrong grain is the most common design mistake in data architectures.
+
 </div>
 
 The grain decision is different at each layer:
@@ -98,8 +100,10 @@ This is the most dangerous anti-pattern. Someone "fixes" a batch of bad readings
 ## Idempotent reprocessing
 
 <div class="definition">
+
 <strong>Idempotency</strong>
 A property where running the same operation multiple times produces the same result as running it once. An idempotent Bronze-to-Silver pipeline can be re-run without creating duplicate Silver rows.
+
 </div>
 
 Imagine the Silver pipeline fails halfway through processing a batch. You fix the bug and re-run it. What happens?

@@ -43,8 +43,10 @@ scada_readings/
 The data is still Parquet files — same format, same compression, same columnar layout. The magic is the `_delta_log/` directory: a sequence of numbered JSON files, each representing one **commit** (one atomic change to the table).
 
 <div class="definition">
+
 <strong>Transaction log (_delta_log/)</strong>
 An ordered sequence of JSON files that records every change to a Delta table. Each file represents one committed transaction and contains a list of actions: files added, files removed, metadata changes, or protocol updates. The log is append-only — entries are never modified or deleted. Together, the log entries define the complete history of the table.
+
 </div>
 
 ## What's in a log entry
@@ -128,8 +130,10 @@ sequenceDiagram
 What if two pipelines try to commit at the same time? Both read the current version as 5, both try to write version 6.
 
 <div class="definition">
+
 <strong>Optimistic concurrency control</strong>
 A strategy where writers assume they won't conflict and proceed without locks. When committing, a writer checks whether the version it expected is still the latest. If another writer already committed that version, the first writer retries: it reads the new state, checks whether its changes still make sense, and tries the next version number. This is "optimistic" because conflicts are rare in practice — most writes touch different data.
+
 </div>
 
 Delta Lake uses optimistic concurrency. On local filesystems, it relies on atomic file creation (the OS guarantees only one process can create a file with a given name). On cloud storage, it uses conditional writes or a commit coordinator:
@@ -150,8 +154,10 @@ Delta Lake 4.0 introduced **Coordinated Commits** — a table feature that uses 
 If the table has 10,000 versions, reading 10,000 JSON files on every query would be slow. Delta Lake solves this with **checkpoints**:
 
 <div class="definition">
+
 <strong>Checkpoint</strong>
 A Parquet file that snapshots the complete table state (all current <code>add</code> actions, the schema, etc.) at a specific version. Written every 10 commits by default. When a reader opens the table, it finds the latest checkpoint and only replays log entries after it — instead of replaying from version 0.
+
 </div>
 
 ```

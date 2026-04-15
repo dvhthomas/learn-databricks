@@ -74,23 +74,31 @@ The structural advantage: every layer reads from and writes to the same Delta ta
 The "modern data stack" -- best-of-breed tools stitched together. Three vendors minimum, each excellent at its layer.
 
 <div class="definition">
+
 <strong>Fivetran</strong>
 A managed data integration (ELT) service. Fivetran provides pre-built connectors that extract data from hundreds of sources (databases, SaaS APIs, event streams) and load it into a destination warehouse. You configure a connector, Fivetran handles schema detection, incremental loading, and error handling. Pricing is based on Monthly Active Rows (MAR) -- the number of rows created, updated, or deleted per month per connector.
+
 </div>
 
 <div class="definition">
+
 <strong>dbt Cloud</strong>
 A managed service for running dbt (data build tool) transformations. dbt defines transformations as SQL SELECT statements organized into models, with dependency management, testing, and documentation built in. dbt Cloud adds scheduling, a browser IDE, CI/CD for model changes, and a semantic layer. Its staging/intermediate/marts pattern is the functional equivalent of Bronze/Silver/Gold.
+
 </div>
 
 <div class="definition">
+
 <strong>Snowpipe</strong>
 Snowflake's continuous data loading service. Snowpipe monitors a cloud storage location (S3, GCS, Azure Blob) and automatically loads new files into Snowflake tables as they arrive. As of December 2025, Snowpipe uses simplified per-GB pricing (0.0037 credits per GB) instead of the previous compute-based model. Snowpipe Streaming extends this to low-latency row-level ingestion from Kafka.
+
 </div>
 
 <div class="definition">
+
 <strong>Snowflake Cortex</strong>
 Snowflake's AI/ML layer, providing SQL-accessible machine learning functions (forecasting, anomaly detection, classification) and LLM capabilities (text completion, summarization, semantic search) that run directly inside Snowflake without moving data to an external platform. Functional for applying pre-built models but less capable than Databricks for custom model training and full lifecycle management.
+
 </div>
 
 ```mermaid

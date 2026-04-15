@@ -30,8 +30,10 @@ How painful is this migration? What breaks? And while you are at it — is Unity
 ## The Hive Metastore to Unity Catalog migration
 
 <div class="definition">
+
 <strong>Hive Metastore (HMS)</strong>
 The legacy metadata service in Databricks, inherited from the Apache Hive project. Each Databricks workspace had its own HMS instance, storing table definitions, schemas, and basic permissions. It uses a single-level namespace (database.table) and workspace-scoped permissions. Still functional but no longer receives new features — Unity Catalog is the replacement.[^1]
+
 </div>
 
 ### What changes architecturally
@@ -118,8 +120,10 @@ Unity Catalog is not the only data governance option. Here is an honest assessme
 ### UC vs. AWS Glue Data Catalog
 
 <div class="definition">
+
 <strong>AWS Glue Data Catalog</strong>
 Amazon's managed metadata service that acts as a central repository for table definitions, schemas, and partition information. It is compatible with the Apache Hive Metastore API, which means tools that speak to Hive (including Spark, Presto, and Athena) can use Glue as their catalog.[^4]
+
 </div>
 
 | Dimension | Unity Catalog | AWS Glue Data Catalog |
@@ -138,8 +142,10 @@ Amazon's managed metadata service that acts as a central repository for table de
 ### UC vs. Apache Polaris (Snowflake's open catalog)
 
 <div class="definition">
+
 <strong>Apache Polaris</strong>
 An open-source catalog for Apache Iceberg tables, originally developed by Snowflake and contributed to the Apache Software Foundation. It implements the Iceberg REST Catalog API and focuses on multi-engine interoperability for Iceberg-native workloads. Snowflake also offers a managed version called Snowflake Open Catalog.[^5]
+
 </div>
 
 | Dimension | Unity Catalog | Apache Polaris |

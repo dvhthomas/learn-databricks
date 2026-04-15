@@ -29,8 +29,10 @@ This lecture covers the practical mechanics of the analyst experience -- the las
 ## JDBC/ODBC: the universal connector
 
 <div class="definition">
+
 <strong>JDBC/ODBC</strong>
 Industry-standard database connectivity protocols. JDBC (Java Database Connectivity) is used by Java-based tools. ODBC (Open Database Connectivity) is used by most desktop BI tools. Both provide a standard interface for submitting SQL queries and receiving results. DBSQL supports both, which means any BI tool that speaks JDBC or ODBC can connect to Databricks -- which is effectively every BI tool that exists.
+
 </div>
 
 Every SQL warehouse exposes connection details: a server hostname, an HTTP path, and an authentication credential (personal access token or OAuth). These three values are all a BI tool needs to connect.
@@ -95,8 +97,10 @@ Do not use generic Spark ODBC/JDBC drivers. The Databricks-specific drivers are 
 ## Partner Connect: one-click setup
 
 <div class="definition">
+
 <strong>Partner Connect</strong>
 A Databricks feature that provides one-click integration setup for supported BI tools and other data platform services. Instead of manually configuring server hostnames, HTTP paths, and drivers, Partner Connect automatically provisions a SQL warehouse (if needed), generates credentials, and opens the partner tool with the connection pre-configured. Supported partners include Tableau, Power BI, Fivetran, dbt, Sigma, and others.
+
 </div>
 
 Partner Connect removes the most common source of analyst friction: connection configuration. In the Databricks workspace, navigate to Partner Connect, select Tableau or Power BI, and click Connect. Databricks creates a service principal, assigns it appropriate Unity Catalog permissions, and generates a Tableau `.tds` or Power BI `.pbids` file that opens the tool with the connection already configured[^3].
@@ -151,8 +155,10 @@ LIMIT 20;
 ## Result caching: free performance
 
 <div class="definition">
+
 <strong>Result cache</strong>
 A multi-tier caching system in DBSQL that stores query results for reuse. When an identical query is submitted and the underlying data has not changed, DBSQL returns the cached result without re-executing the query. This is transparent to the user and costs no compute. DBSQL maintains both a local cache (on the warehouse's SSD) and a remote cache (serverless only, persisted in workspace storage so it survives warehouse restart).
+
 </div>
 
 Result caching is the single easiest performance win for analyst workloads. Here is why: dashboards refresh on a schedule -- every 5 minutes, every hour, on page load. Most of those refreshes query data that has not changed since the last refresh. Without caching, every refresh executes the full query. With caching, repeated queries return instantly.

@@ -39,8 +39,10 @@ Snowflake has been a SQL-first platform since its founding in 2012. Its query op
 ### Concurrency model
 
 <div class="definition">
+
 <strong>Virtual warehouse (Snowflake)</strong>
 Snowflake's compute unit. A named, independently scalable cluster of compute resources. Multiple virtual warehouses can query the same data simultaneously without contention. Snowflake's multi-cluster warehouse feature automatically adds compute clusters when concurrent queries exceed capacity -- no configuration required beyond setting a maximum cluster count.
+
 </div>
 
 Snowflake's concurrency scaling "just works" in a way that DBSQL is still catching up to. When 50 analysts hit a Snowflake virtual warehouse simultaneously, Snowflake spins up additional clusters automatically and the analysts barely notice. DBSQL's Serverless Intelligent Workload Management handles this scenario well now, but Pro and Classic warehouses scale by adding entire cluster units, which is slower and coarser-grained[^2].
@@ -145,13 +147,17 @@ The dividing line: if the data needs engineering or ML processing, it lives in D
 Both Databricks and Snowflake have automatic query optimization features. In Databricks, the two you need to know are Z-ordering and its successor, Liquid clustering.
 
 <div class="definition">
+
 <strong>Z-ordering</strong>
 A data layout technique that co-locates related values within the same set of Parquet files. When you Z-order a Delta table by <code>sensor_id</code>, the OPTIMIZE command rewrites files so that readings from the same sensor tend to be in the same files. This enables data skipping -- queries filtered by <code>sensor_id</code> can skip files that do not contain the target sensor, dramatically reducing I/O.
+
 </div>
 
 <div class="definition">
+
 <strong>Liquid clustering</strong>
 The successor to Z-ordering and partitioning for Delta Lake tables, GA since 2024. Unlike Z-ordering (which rewrites the entire table on each OPTIMIZE), Liquid clustering is incremental -- it only reorganizes new or unclustered data. Clustering keys can be changed without rewriting the table. Databricks handles re-clustering automatically in the background. For new tables, Liquid clustering is the recommended approach.
+
 </div>
 
 ```sql

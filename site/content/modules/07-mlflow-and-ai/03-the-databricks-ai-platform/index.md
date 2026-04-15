@@ -66,8 +66,10 @@ graph TB
 ### Feature Store: why ML teams need it
 
 <div class="definition">
+
 <strong>Feature Store</strong>
 A centralized repository for computed features (engineered variables) used in ML models. The Feature Store ensures that the same feature computation used during training is used during serving — eliminating the "training-serving skew" that caused the vibration model's feature mismatch in Lecture 1. On Databricks, any Delta table in Unity Catalog with a primary key can serve as a feature table[^1].
+
 </div>
 
 Remember the vibration model failure: features were engineered in a notebook (rolling 24-hour standard deviation), then re-implemented differently in the serving pipeline (rolling 24 readings = 4 hours). A Feature Store prevents this by computing features once and serving them to both training and inference.
@@ -101,15 +103,19 @@ The Feature Store also handles **online serving** — publishing features to a l
 Feature Store's online serving pushes precomputed features to a low-latency store (DynamoDB on AWS, Cosmos DB on Azure) for real-time inference. For the vibration model, this means features like `rolling_30day_rms_vibration` and `temperature_deviation_from_normal` are precomputed in a batch pipeline, published to the online store, and looked up at serving time -- ensuring the model sees the exact same feature values in production as it did in training. Without this, you'd compute features on-the-fly at serving time, risking training-serving skew (different computation logic, different data windows, different rounding).
 
 <div class="definition">
+
 <strong>Retrieval-Augmented Generation (RAG)</strong>
 A pattern where an LLM's response is grounded in retrieved documents rather than relying solely on its training data. For the wind utility: instead of asking an LLM "how do I replace a gearbox bearing?" and getting a generic answer, RAG retrieves the actual maintenance manual pages for your specific turbine model and feeds them to the LLM, producing an answer grounded in your documentation.
+
 </div>
 
 ### Vector Search: for RAG applications
 
 <div class="definition">
+
 <strong>Vector Search</strong>
 A service that indexes and retrieves data based on semantic similarity rather than exact keyword matching. Text (or other data) is converted to numerical vectors (embeddings), and queries find the most similar vectors. On Databricks, Vector Search integrates directly with Delta tables — as your data changes, the vector index updates automatically[^3].
+
 </div>
 
 For the wind utility, the RAG use case is a maintenance knowledge base. Field engineers need to diagnose problems at turbine sites. They have 15 years of maintenance reports, OEM technical bulletins, and incident investigations — thousands of documents. Instead of keyword search through a document management system, a RAG-powered assistant lets them ask: "What were the symptoms before the Turbine 347 gearbox failure in 2024?"
@@ -126,8 +132,10 @@ Databricks redesigned Vector Search in 2025 with a storage-optimized architectur
 ### Model Serving: real-time inference
 
 <div class="definition">
+
 <strong>Model Serving endpoint</strong>
 A managed API endpoint that serves predictions from an MLflow model. Databricks Model Serving provides serverless, auto-scaling infrastructure — endpoints scale from zero (no cost when idle) to thousands of queries per second (over 25,000 QPS with sub-50ms overhead). Models registered in Unity Catalog can be deployed to a serving endpoint with a few clicks or API calls[^5].
+
 </div>
 
 For the vibration model, Model Serving provides the real-time prediction endpoint that SCADA data flows through:
@@ -153,8 +161,10 @@ Model Serving also hosts **Foundation Model APIs** — Databricks provides acces
 ### AI Gateway: centralized LLM governance
 
 <div class="definition">
+
 <strong>AI Gateway</strong>
 A unified API proxy for all LLM interactions — whether models are hosted on Databricks, on external providers (OpenAI, Anthropic, Google), or self-hosted. The AI Gateway provides rate limiting, usage tracking, cost attribution, PII detection, safety guardrails, and automatic fallback between providers. It went generally available in 2025[^6].
+
 </div>
 
 For a wind utility subject to NERC CIP, the AI Gateway answers a compliance question that would otherwise be difficult: "Which LLM providers have access to our data, and what are the usage patterns?" Every LLM request flows through the Gateway, so you get:

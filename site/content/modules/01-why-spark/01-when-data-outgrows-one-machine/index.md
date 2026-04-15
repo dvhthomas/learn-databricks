@@ -58,8 +58,10 @@ In sensor-analytics, Redis is the message queue between the collector and the Pa
 **What you need:** A durable, replayable event log. If the writer crashes, you need to replay from where it left off — not lose the data.
 
 <div class="definition">
+
 <strong>Apache Kafka</strong>
 A distributed event streaming platform that stores ordered, immutable sequences of events (called topics) durably on disk. Unlike Redis, Kafka retains events for a configurable period (days, weeks, or forever), allowing multiple consumers to read the same data independently and at their own pace. For industrial IoT, Kafka is the standard backbone for ingesting sensor data at scale — it handles connectivity to SCADA systems, PLCs, and MQTT brokers through Kafka Connect[^2].
+
 </div>
 
 In the wind utility, Kafka replaces Redis. SCADA data flows from turbine controllers → a Kafka topic → multiple consumers: one writes to long-term storage, another feeds the real-time dashboard, a third streams to an ML model for anomaly detection. If any consumer fails, the data is still in Kafka — replay from the last offset and catch up.
@@ -81,8 +83,10 @@ sensor-analytics writes Parquet files to the local filesystem. One process write
 Local Parquet files on one machine can't serve this. You need **object storage** — S3, Azure Data Lake Storage (ADLS), or Google Cloud Storage — where data is durable, accessible from any compute node, and cost-effective for petabyte-scale retention.
 
 <div class="definition">
+
 <strong>Object storage (S3 / ADLS / GCS)</strong>
 Cloud storage services that store data as objects (files) in a flat namespace of "buckets." Unlike local filesystems, object storage is: virtually unlimited in capacity, accessible from any machine with credentials, durable (designed for 99.999999999% — "eleven nines" — durability), and inexpensive for cold data (~$0.02/GB/month). The trade-off: individual file operations are slower than local disk (100ms+ latency per request), so access patterns matter.
+
 </div>
 
 But putting Parquet files in S3 doesn't solve everything — it actually creates new problems that didn't exist on local disk. We'll cover those in Module 2 (Delta Lake).

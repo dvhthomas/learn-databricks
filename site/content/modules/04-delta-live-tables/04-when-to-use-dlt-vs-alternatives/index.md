@@ -30,13 +30,17 @@ The honest answer starts with questions, not recommendations.
 This is the comparison that causes the most confusion, because people assume DLT and Airflow compete. They do not. They operate at different levels.
 
 <div class="definition">
+
 <strong>Orchestrator</strong>
 A system that coordinates when things run, in what order, and what to do when they fail. Airflow is an orchestrator. It does not transform data itself -- it triggers other systems that do. An Airflow DAG might say: "At 2am, call the weather API. When that finishes, trigger the DLT pipeline. When that finishes, refresh the BI dashboard. If any step fails, send a Slack alert."
+
 </div>
 
 <div class="definition">
+
 <strong>Pipeline engine</strong>
 A system that actually moves and transforms data. DLT is a pipeline engine. It reads source data, applies transformations and quality rules, manages incremental state, and writes output tables. It does not know or care about the weather API or the BI dashboard -- it handles the data processing step.
+
 </div>
 
 In the wind utility's production architecture, both exist:
@@ -140,8 +144,10 @@ DLT adds value through automation, quality tracking, and managed incremental pro
 ## Enhanced Autoscaling: a DLT-specific advantage
 
 <div class="definition">
+
 <strong>Enhanced Autoscaling</strong>
 DLT's autoscaling algorithm that scales compute up and down based on task slot utilization and queue depth, not just cluster-level CPU metrics. For streaming workloads, this is more responsive than standard Databricks autoscaling because it understands the pipeline's processing model, not just generic resource utilization[^5].
+
 </div>
 
 For serverless DLT pipelines (available since 2025), the system also selects the most cost-efficient instance types automatically. You specify a maximum worker count and DLT handles the rest -- scaling up during the morning SCADA data burst, scaling down during the quiet overnight hours[^5].

@@ -28,8 +28,10 @@ You saw in the last lecture how a hand-coded medallion pipeline fails at 3am: Si
 ## The core concept
 
 <div class="definition">
+
 <strong>Declarative pipeline</strong>
 A pipeline where you define the desired state of each dataset -- its schema, its source, its quality constraints -- and the engine determines the execution plan: dependency ordering, incremental processing, error handling, and retry logic. You describe WHAT the data should look like. The engine decides HOW and WHEN to produce it.
+
 </div>
 
 This is the same shift that happened in other domains. SQL is declarative: you say `SELECT ... WHERE ...` and the query optimizer figures out the execution plan. You do not write the hash join or the index scan yourself. Kubernetes is declarative: you say "I want 3 replicas of this container" and the scheduler figures out placement. Terraform is declarative: you describe the infrastructure and it computes the diff.
@@ -168,13 +170,17 @@ DLT can enforce or evolve schemas automatically. If a new column appears in the 
 These two functions determine how DLT processes data for each table, and choosing the right one is important.
 
 <div class="definition">
+
 <strong>dlt.read_stream()</strong>
 Streaming read. Processes only new rows since the last update. Use for tables that should be incrementally updated as new data arrives. Bronze and Silver tables typically use streaming reads because new SCADA readings arrive continuously and should be processed incrementally.
+
 </div>
 
 <div class="definition">
+
 <strong>dlt.read()</strong>
 Batch read. Recomputes the entire table from its source on each update. Use for tables that need full recomputation, like aggregations where the result depends on all input rows. Gold tables typically use batch reads because the hourly average changes when any row in the hour changes.
+
 </div>
 
 You can mix both in one pipeline. The standard pattern for the wind utility:

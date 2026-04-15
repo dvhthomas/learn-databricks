@@ -30,13 +30,17 @@ The answer is a three-level namespace: **catalog.schema.table**.
 ## The hierarchy
 
 <div class="definition">
+
 <strong>Catalog</strong>
 The top level of the Unity Catalog namespace hierarchy. A catalog is a logical container for schemas, analogous to a database in PostgreSQL or a top-level organizational boundary. Catalogs typically map to environments (dev, staging, prod), business units, or major domains. Every Unity Catalog metastore can contain multiple catalogs.[^1]
+
 </div>
 
 <div class="definition">
+
 <strong>Schema</strong>
 The second level of the namespace, contained within a catalog. A schema groups related tables, views, functions, and volumes. It maps to a functional area or data domain — like "scada," "weather," or "fleet_analytics." In traditional databases, this is sometimes called a "database" (confusingly). In Unity Catalog, it is always called a schema.[^1]
+
 </div>
 
 Every data asset in Unity Catalog has a three-part fully qualified name:
@@ -200,13 +204,17 @@ Unity Catalog eliminates this by making the metastore the single source of truth
 When you create a table in Unity Catalog, you choose between two storage models:
 
 <div class="definition">
+
 <strong>Managed table</strong>
 A table where Unity Catalog controls both the metadata and the underlying data files. The data is stored in a managed storage location owned by the metastore. When you <code>DROP TABLE</code>, both the metadata and the data files are deleted. This is the default.[^3]
+
 </div>
 
 <div class="definition">
+
 <strong>External table</strong>
 A table where Unity Catalog controls the metadata but the data files live in a storage location you specify and own. When you <code>DROP TABLE</code>, only the metadata is removed — the data files remain. The storage location must be registered as an external location in Unity Catalog.[^3]
+
 </div>
 
 ```sql

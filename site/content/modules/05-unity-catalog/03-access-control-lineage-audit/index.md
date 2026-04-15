@@ -63,8 +63,10 @@ REVOKE SELECT ON SCHEMA wind_prod.fleet_analytics
 Your `turbine_readings` table has `latitude` and `longitude` columns. These are CEII — they reveal the physical location of energy infrastructure. Most analysts need the operational data (power output, wind speed, temperatures) but should never see the coordinates. Historically, you would create a separate view that omits those columns. But views proliferate, get out of sync, and every downstream query needs to know which view to use.
 
 <div class="definition">
+
 <strong>Column mask</strong>
 A SQL function applied to a column that dynamically transforms the value based on who is querying. The mask is attached to the column itself, not to a view — so every query against the table automatically applies the mask. The function receives the column value and returns the transformed value (which must be the same data type).[^2]
+
 </div>
 
 ```sql
@@ -125,8 +127,10 @@ To test masks without exposing real data: create a `wind_dev` catalog with synth
 Your wind utility operates in Texas, Oklahoma, and Kansas. The Texas operations team should see Texas turbines. The Oklahoma team should see Oklahoma. The fleet analytics team sees everything. Row filters make this automatic.
 
 <div class="definition">
+
 <strong>Row filter</strong>
 A SQL function applied to a table that dynamically filters rows based on who is querying. The function returns a boolean — <code>TRUE</code> keeps the row, <code>FALSE</code> hides it. Like column masks, the filter is attached to the table, not to a view.[^2]
+
 </div>
 
 ```sql
@@ -214,8 +218,10 @@ When the NERC auditor asks "how did you compute this fleet capacity factor," lin
 ## Audit: every access, every change, immutable and queryable
 
 <div class="definition">
+
 <strong>System tables</strong>
 A set of Delta tables in the <code>system</code> catalog that Unity Catalog populates automatically. They include audit logs (<code>system.access.audit</code>), lineage data (<code>system.lineage.table_lineage</code>, <code>system.lineage.column_lineage</code>), billing data, and more. These tables are queryable with standard SQL — you can build dashboards, alerts, and compliance reports directly on top of them.[^5]
+
 </div>
 
 The most important system table for compliance is `system.access.audit`. Every action that passes through Unity Catalog is logged:

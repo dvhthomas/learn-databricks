@@ -31,8 +31,10 @@ Who's right? The honest answer: **both, for different parts of the problem.**
 Here's an uncomfortable truth that Databricks sales engineers won't lead with: for most individual queries against your wind turbine data, a single machine is faster, cheaper, and simpler.
 
 <div class="definition">
+
 <strong>DuckDB</strong>
 An embedded analytical database (like SQLite, but for analytics). It runs in a single process on a single machine, processes data in a columnar format, and is optimized for analytical queries on datasets that fit on one node. It requires zero infrastructure — no cluster, no configuration, no server[^1].
+
 </div>
 
 DuckDB has matured significantly. Version 1.0 shipped in June 2024 (stable storage format, no more breaking changes), and the 1.4 LTS release (October 2025) added database encryption, the MERGE statement, and Iceberg write support[^2]. DuckDB can now query Delta tables directly, and in benchmarks has processed 1 TB of Parquet data in approximately 30 seconds on a standard laptop[^3].

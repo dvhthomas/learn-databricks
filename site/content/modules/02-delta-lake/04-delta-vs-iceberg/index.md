@@ -32,13 +32,17 @@ This is a question you will hear in every platform conversation. Having a nuance
 There are three open table formats that add ACID guarantees to files in cloud storage:
 
 <div class="definition">
+
 <strong>Apache Iceberg</strong>
 An open table format created at Netflix in 2017, now an Apache project. Like Delta Lake, it adds ACID transactions, schema evolution, time travel, and partition evolution to Parquet files. Iceberg's metadata is stored as Parquet files (not JSON) in a tree structure with manifest files. It's governed by the Apache Software Foundation with contributions from 30+ companies — no single vendor controls the roadmap.
+
 </div>
 
 <div class="definition">
+
 <strong>Apache Hudi</strong>
 An open table format created at Uber in 2016. Focuses on incremental processing and upserts — originally built for Uber's massive ride-event pipeline. Still maintained but has less industry momentum than Delta or Iceberg. Hudi is increasingly a niche choice for specific streaming upsert workloads.
+
 </div>
 
 In practice, the conversation is Delta Lake vs. Iceberg. Hudi still has users, but new platform decisions almost always come down to these two.

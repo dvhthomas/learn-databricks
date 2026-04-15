@@ -13,8 +13,8 @@
 
   <nav class="page-nav">
     {{ $siblings := where .Parent.Pages "Params.type" .Params.type }}
-    {{ with $siblings.Prev . }}<a href="{{ .RelPermalink }}">← {{ .Title }}</a>{{ end }}
-    {{ with $siblings.Next . }}<a href="{{ .RelPermalink }}" class="next">{{ .Title }} →</a>{{ end }}
+    {{ with $siblings.Next . }}<a href="{{ .RelPermalink }}">← {{ .Title }}</a>{{ end }}
+    {{ with $siblings.Prev . }}<a href="{{ .RelPermalink }}" class="next">{{ .Title }} →</a>{{ end }}
   </nav>
 </article>
 {{ end }}

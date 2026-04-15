@@ -56,8 +56,10 @@ The team iterated through dozens of model variants. The one they deployed was "t
 ### 4. Input distributions shifted and nobody noticed
 
 <div class="definition">
+
 <strong>Data drift (input drift)</strong>
 A change in the statistical distribution of input features between training and serving. If a model was trained on summer vibration patterns (higher ambient temperatures, different thermal expansion) and deployed into winter (lower temperatures, different vibration baselines), the inputs it sees in production are outside the distribution it learned from. The model's predictions become unreliable even though nothing about the model itself changed.
+
 </div>
 
 There are actually three distinct types of drift, and they require different responses:
@@ -133,8 +135,10 @@ If you've worked in software engineering, you've heard "it works on my machine."
 - **Different feature computation.** Features were engineered in notebook cells that don't map cleanly to a production pipeline.
 
 <div class="definition">
+
 <strong>Reproducibility</strong>
 The ability to produce the same model — with the same performance — given the same inputs. In ML, this requires tracking not just code but data versions, library versions, hyperparameters, random seeds, and the compute environment. MLflow was built specifically to solve this problem[^3].
+
 </div>
 
 ## What the solution looks like

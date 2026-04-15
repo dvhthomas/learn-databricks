@@ -36,8 +36,10 @@ This is not a hypothetical. This is why enterprises buy Databricks.
 ## $10 million in concrete stakes
 
 <div class="definition">
+
 <strong>CEII (Critical Energy Infrastructure Information)</strong>
 Specific engineering, vulnerability, and operational data about energy infrastructure — including generation capacity, grid topology, and physical security details — that FERC designates as requiring restricted access. For a wind utility, this includes turbine GPS coordinates, substation connection points, and generation capacity data that could reveal grid vulnerabilities.[^1]
+
 </div>
 
 In 2019, Duke Energy agreed to pay $10 million to settle 127 NERC CIP violations spanning 2015 to 2018. Thirteen of those violations were classified as "serious," and NERC stated they "collectively posed a serious risk to the security and reliability of the Bulk Power System."[^2] The root causes were not exotic cyberattacks. NERC cited "lack of management engagement, support, and accountability," organizational silos, and deficient processes.[^3]
@@ -108,8 +110,10 @@ The fundamental mismatch: IAM governs *storage*. Unity Catalog governs *data*. S
 ## What Unity Catalog actually is
 
 <div class="definition">
+
 <strong>Unity Catalog</strong>
 Databricks' centralized governance layer for all data and AI assets. It provides a three-level namespace (catalog, schema, table), fine-grained access control (including column masking and row filtering), automatic data lineage tracking, and immutable audit logs — all queryable through SQL. Open-sourced under Apache 2.0 in June 2024 and hosted at the Linux Foundation's LF AI & Data.[^6]
+
 </div>
 
 Unity Catalog sits between your users and your data. Every query, every access, every permission change passes through it. This is not optional overhead — it is the governance layer that lets you answer the auditor's three questions:

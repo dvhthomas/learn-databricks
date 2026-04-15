@@ -30,8 +30,10 @@ You understand how the transaction log works. Now: what can you *do* with it? Th
 In the wind utility, data comes from many sources: SCADA systems from different turbine manufacturers (Vestas, GE, Siemens Gamesa), third-party weather providers, maintenance systems. Each has its own schema quirks. Without enforcement, your table slowly accumulates columns nobody expected, types that silently changed, and nulls where there used to be values.
 
 <div class="definition">
+
 <strong>Schema enforcement (schema on write)</strong>
 When you write to a Delta table, the schema of the incoming data is checked against the table's existing schema. If they don't match — a new column, a missing column, a type change — the write is rejected with an error. This happens at commit time, before any data is visible to readers.
+
 </div>
 
 ### What gets caught
@@ -163,8 +165,10 @@ In the wind utility, data doesn't always arrive in order:
 All of these are "upsert" patterns — update if the row exists, insert if it doesn't.
 
 <div class="definition">
+
 <strong>MERGE (upsert)</strong>
 A SQL operation that combines INSERT, UPDATE, and DELETE in a single atomic transaction. You specify a matching condition (e.g., same turbine_id and timestamp), then define what to do when rows match (update them) and when they don't (insert them). The entire operation is one commit in the Delta log — readers never see a half-updated table.
+
 </div>
 
 ### MERGE in action

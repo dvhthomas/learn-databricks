@@ -26,8 +26,10 @@ Your wind utility's 15 analysts need fast SQL access to governed Gold tables. Yo
 ## What a SQL warehouse is
 
 <div class="definition">
+
 <strong>SQL warehouse</strong>
 A dedicated compute endpoint in Databricks optimized for SQL analytics workloads. Unlike an all-purpose cluster (which supports notebooks, Python, Scala, and interactive development), a SQL warehouse accepts only SQL queries and is tuned for BI query patterns: fast startup, automatic scaling based on query queue depth, and automatic suspension when idle. It runs the Photon engine for vectorized query execution against Delta tables governed by Unity Catalog.
+
 </div>
 
 A SQL warehouse is not a separate product from Databricks -- it is a different compute configuration on the same platform. It reads from the same Delta tables, respects the same Unity Catalog permissions, and accesses the same data that your Spark jobs write to. The difference is in how compute is provisioned and optimized.
@@ -69,8 +71,10 @@ Pro warehouses also run in your cloud account, but they add Photon and Predictiv
 Serverless warehouses run in *Databricks'* cloud account on pre-warmed compute pools. This is what enables the 2 to 6 second startup time -- the VMs already exist, Databricks just assigns your query to available capacity. Serverless includes all performance features: Photon, Predictive I/O, and Intelligent Workload Management (IWM), which dynamically routes queries across available compute to minimize queue wait times[^3].
 
 <div class="definition">
+
 <strong>Intelligent Workload Management (IWM)</strong>
 A serverless-only feature that dynamically manages how queries are distributed across compute resources. Instead of rigid cluster-based scaling (add a whole new cluster when the queue is full), IWM can adjust resource allocation at a finer granularity, responding to changing query demand more quickly and cost-effectively than manual or rules-based auto-scaling.
+
 </div>
 
 | Feature | Classic | Pro | Serverless |
@@ -87,8 +91,10 @@ A serverless-only feature that dynamically manages how queries are distributed a
 ## What Photon actually does
 
 <div class="definition">
+
 <strong>Photon</strong>
 A query execution engine written in C++ that replaces Spark's JVM-based execution layer for SQL workloads. Photon processes data in columnar batches using SIMD (Single Instruction, Multiple Data) CPU instructions, achieving 3x to 10x speedups over standard Spark SQL for typical analytics queries. It is not a separate product -- it is the execution engine inside SQL warehouses and can be enabled on all-purpose clusters.
+
 </div>
 
 Photon is often described as "Databricks' faster engine" or "C++ instead of JVM." That is technically true but misses the important part. The performance gain comes from a fundamentally different execution model, not just a language change.
@@ -143,8 +149,10 @@ To check if Photon accelerated your query: open the Query Profile in the DBSQL U
 ## The cost model
 
 <div class="definition">
+
 <strong>DBU (Databricks Unit)</strong>
 The billing unit for Databricks compute. One DBU represents a normalized unit of processing capability per hour. The dollar cost per DBU varies by workload type, cloud provider, and tier. DBU consumption depends on the size of the cluster or warehouse -- a larger warehouse uses more DBUs per hour but completes queries faster.
+
 </div>
 
 Understanding DBSQL pricing requires knowing that you pay two bills: one to Databricks (DBU charges) and one to your cloud provider (VM and storage costs). For serverless warehouses, the cloud compute cost is included in the DBU rate[^7].

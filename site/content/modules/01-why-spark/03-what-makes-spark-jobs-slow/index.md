@@ -50,8 +50,10 @@ This changes everything. To compute the average gearbox temperature for turbine 
 Multiply that by 500 turbines, and you have a significant data transfer.
 
 <div class="definition">
+
 <strong>Shuffle</strong>
 The process of redistributing data across executors so that rows with the same key end up on the same machine. Shuffles happen during groupBy, join, distinct, repartition, and any operation that requires data from multiple partitions to be combined. During a shuffle, every executor writes its outgoing data to local disk, then every executor reads incoming data from every other executor over the network[^1].
+
 </div>
 
 ## Why shuffles are expensive
@@ -109,8 +111,10 @@ A common question: "If I double my executor memory, does shuffle get faster?" Us
 Spark uses shuffles to divide your job into **stages**.
 
 <div class="definition">
+
 <strong>Stage</strong>
 A group of tasks that can run without a shuffle. When Spark encounters an operation that requires a shuffle (like groupBy or join), it creates a stage boundary. All tasks in the current stage must complete and write their shuffle data before the next stage can begin[^1].
+
 </div>
 
 For our wind turbine query:

@@ -30,8 +30,10 @@ These are real questions you will hear. Having honest, nuanced answers — not "
 ## dbt's staging / intermediate / marts
 
 <div class="definition">
+
 <strong>dbt (data build tool)</strong>
 An open-source transformation framework that lets data teams write SQL SELECT statements to define data models, then handles dependency ordering, testing, documentation, and incremental materialization. dbt operates inside a warehouse (Snowflake, BigQuery, Databricks SQL) — it transforms data that is already loaded, not the loading itself.
+
 </div>
 
 dbt organizes transformations into three layers that map directly to medallion:
@@ -109,8 +111,10 @@ The pattern is identical. The differences are in what the platform provides arou
 ## Lambda architecture: historical context
 
 <div class="definition">
+
 <strong>Lambda architecture</strong>
 A data processing pattern proposed by Nathan Marz in 2011 that runs every computation through two paths: a batch layer (for complete, accurate results on historical data) and a speed layer (for low-latency results on recent data). A serving layer merges the two. Lambda solved the problem of getting both accuracy and speed when the same data pipeline could not provide both.
+
 </div>
 
 Lambda architecture was the dominant pattern before lakehouses. Understanding it matters because some customers still run Lambda systems, and medallion is partly a response to Lambda's pain points.

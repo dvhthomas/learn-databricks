@@ -74,8 +74,10 @@ Vertex AI is relevant when the customer is on Google Cloud or evaluating multi-c
 This comparison comes up constantly because many Databricks customers also have Snowflake in their organization.
 
 <div class="definition">
+
 <strong>Snowflake Cortex</strong>
 Snowflake's AI layer, providing SQL-callable functions for LLM inference, embeddings, classification, anomaly detection, and summarization. Cortex runs within Snowflake's compute, so data never leaves the platform. It is designed for SQL-first teams that want to apply AI to their data without managing infrastructure or writing Python[^3].
+
 </div>
 
 **Where Snowflake Cortex is stronger:**

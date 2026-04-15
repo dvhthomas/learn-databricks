@@ -29,8 +29,10 @@ MLflow exists to make those questions trivially answerable. But what does it act
 ## What MLflow is (and isn't)
 
 <div class="definition">
+
 <strong>MLflow</strong>
 An open-source platform for managing the ML lifecycle. MLflow tracks experiments (parameters, metrics, artifacts), packages models for reproducible deployment, and manages model versions through a registry. Originally created at Databricks in 2018, it is now the most widely adopted ML lifecycle tool, with over 20 million monthly downloads. MLflow 3, released in 2025, extended the platform to handle generative AI applications, AI agents, and prompt versioning alongside traditional ML[^1].
+
 </div>
 
 MLflow is *not* a training framework. It does not replace scikit-learn, PyTorch, or XGBoost. It wraps around whatever training code you write and tracks what happened. Think of it as git for ML experiments — except it versions data and metrics alongside code.
@@ -82,13 +84,17 @@ MLflow automatically captures the git commit hash (if you're in a git repo) and 
 ## Experiments and runs
 
 <div class="definition">
+
 <strong>Experiment</strong>
 A named container for related MLflow runs. An experiment groups all the training attempts for a particular task — for example, "bearing-failure-prediction" might contain 50 runs with different hyperparameters, feature sets, and training windows. Experiments make it possible to compare runs and find the best-performing configuration.
+
 </div>
 
 <div class="definition">
+
 <strong>Run</strong>
 A single execution of training code within an experiment. Each run records its own parameters, metrics, artifacts, and code version. Runs are immutable once logged — you can't go back and change the metrics of a past run, which preserves the integrity of your experiment history.
+
 </div>
 
 Here's what a typical experiment workflow looks like for the vibration model:
@@ -119,8 +125,10 @@ After four runs, you open the MLflow UI and see a table: contamination values on
 Tracking experiments solves the reproducibility problem. But there's a second problem: managing the *lifecycle* of a model once you've picked the best one. Which model is in staging? Which is in production? Who approved the transition? What happens when you need to roll back?
 
 <div class="definition">
+
 <strong>Registered Model</strong>
 A named entry in the MLflow Model Registry that represents a deployable model. A registered model can have multiple versions, each linked to a specific MLflow run. The registry tracks which version is in which stage and who transitioned it there. On Databricks, registered models live in Unity Catalog as governed objects with the same access control, lineage, and audit trails as Delta tables[^2].
+
 </div>
 
 ### The lifecycle stages
